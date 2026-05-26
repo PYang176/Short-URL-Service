@@ -1,6 +1,6 @@
 # 短链服务 (Short URL Service)
 
-基于 Go 1.22 原生 `net/http` 开发的高性能、高可Short URL Service用短链跳转系统。
+基于 Go 1.22 原生 `net/http` 开发的高性能、高可用短链跳转系统。
 
 ## 功能特性
 
