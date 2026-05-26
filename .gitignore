@@ -1,0 +1,20 @@
+# .gitignore
+config.json
+
+# 编译产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+short-url-service
+cmd/server/server
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go
+vendor/
