@@ -27,7 +27,7 @@
 | API | Go、Gin、sqlx |
 | 事务数据库 | MySQL 8 |
 | 缓存与事件 | Redis 7、Redis Streams |
-| 分析数据库 | ClickHouse |
+| 分析存储 | MySQL 8 点击明细与预聚合表 |
 | 前端 | Vue 3、TypeScript、ECharts |
 | 对象存储 | MinIO |
 | 反向代理 | Caddy |
@@ -47,8 +47,6 @@ cmd/api ---------------------- MySQL
    +---- Redis Streams           |
              |                   |
           cmd/worker ------------+
-             |
-          ClickHouse
 ```
 
 详细设计见：
@@ -182,5 +180,5 @@ docs/           需求、架构、数据和开发文档
 ## 当前边界
 
 - 自定义域名将使用 DNS Resolver 抽象，在没有真实域名时通过 Fake Resolver 和 Host 头完成本地验证。
-- ClickHouse 分析链路将在点击事件模块中接入。
+- 点击分析使用 Redis Streams 异步缓冲，并通过 MySQL 明细表和每日聚合表提供统计查询。
 - 旧的实验实现已移除，历史代码仍可从初始 Git 提交恢复。
