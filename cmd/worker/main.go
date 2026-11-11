@@ -1,0 +1,113 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
+	"github.com/PYang176/Short-URL-Service/internal/platform/config"
+	"github.com/PYang176/Short-URL-Service/internal/platform/database"
+)
+
+// main 启动 Worker 进程并在失败时返回非零退出码
+func main() {
+	if err := run(); err != nil {
+		slog.Error("Worker 进程异常退出", "error", err)
+		os.Exit(1)
+	}
+}
+
+// run 初始化 Worker 依赖和健康服务并等待退出信号
+func run() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("加载配置失败: %w", err)
+	}
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelStartup()
+
+	db, err := database.OpenMySQL(startupCtx, cfg.MySQL)
+	if err != nil {
+		return fmt.Errorf("初始化 MySQL 失败: %w", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Warn("关闭 MySQL 失败", "error", err)
+		}
+	}()
+
+	redisClient, err := cache.OpenRedis(startupCtx, cfg.Redis)
+	if err != nil {
+		return fmt.Errorf("初始化 Redis 失败: %w", err)
+	}
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			slog.Warn("关闭 Redis 失败", "error", err)
+		}
+	}()
+
+	registry := prometheus.NewRegistry()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := db.PingContext(ctx); err != nil {
+			http.Error(w, "mysql unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			http.Error(w, "redis unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+
+	server := &http.Server{
+		Addr:              cfg.HTTP.Addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		logger.Info("Worker 服务启动", "health_addr", cfg.HTTP.Addr, "env", cfg.Env)
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	case <-runCtx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("关闭 Worker 健康服务失败: %w", err)
+		}
+		return nil
+	}
+}

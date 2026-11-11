@@ -1,5 +1,7 @@
 # .gitignore
 config.json
+.env
+deploy/.env
 
 # 编译产物
 *.exe
@@ -18,3 +20,9 @@ cmd/server/server
 
 # Go
 vendor/
+
+# Local scratch and test output
+scratch/
+coverage.out
+coverage.html
+tmp/

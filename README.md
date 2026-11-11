@@ -1,82 +1,186 @@
-# 短链服务 (Short URL Service)
+# Short URL Service
 
-基于 Go 1.22 原生 `net/http` 开发的高性能、高可Short URL Service用短链跳转系统。
+一个面向高并发跳转和访问分析的短链接平台。项目采用模块化单体结构，提供 `api` 和 `worker` 两个独立运行角色，覆盖短链管理、自定义域名、动态二维码、点击分析和可视化报表。
 
-## 功能特性
+> 当前处于完整版开发阶段。认证、工作空间、数据库迁移和本地运行环境已经完成，短链、域名、二维码和分析模块正在按路线逐步实现。
 
-- **高性能路由**：基于 Go 1.22 原生 `net/http`，无第三方框架依赖。
-- **Redis 缓存**：缓存热点数据，结合空值缓存有效防止缓存穿透。
-- **分布式限流**：Redis 固定窗口计数 + Lua 原子操作，防止恶意刷接口。
-- **协程池**：异步处理点击量更新，控制 Goroutine 并发数，削峰填谷。
-- **配置化**：JSON 统一管理 DB、Redis、限流及协程池参数，支持环境隔离。
+## 已实现
 
-## 快速开始
+- Gin API 和 Worker 双入口。
+- 环境变量配置和启动校验。
+- 结构化 JSON 日志、请求 ID 和 Prometheus 指标。
+- MySQL、Redis 连接池。
+- 存活检查、就绪检查和优雅退出。
+- Goose 数据库迁移。
+- 用户注册、登录、退出。
+- Argon2id 密码摘要。
+- JWT Access Token。
+- 不透明 Refresh Token 和轮换重放检测。
+- 注册时原子创建用户、工作空间和 Owner 成员关系。
+- 当前用户资料查询和修改。
+- Docker Compose 完整本地依赖。
 
-### 环境准备
+## 技术栈
 
-- Go 1.22+
-- MySQL 8.0+
-- Redis 7.0+
+| 层 | 技术 |
+| --- | --- |
+| API | Go、Gin、sqlx |
+| 事务数据库 | MySQL 8 |
+| 缓存与事件 | Redis 7、Redis Streams |
+| 分析数据库 | ClickHouse |
+| 前端 | Vue 3、TypeScript、ECharts |
+| 对象存储 | MinIO |
+| 反向代理 | Caddy |
+| 可观测性 | Prometheus、Grafana、`log/slog` |
 
-### 配置数据库
+## 架构
 
-### 1. 配置 Go 镜像源
+```text
+Vue Web
+   |
+Caddy
+   |
+cmd/api ---------------------- MySQL
+   |                             |
+   +---- Redis cache/rate limit  |
+   |                             |
+   +---- Redis Streams           |
+             |                   |
+          cmd/worker ------------+
+             |
+          ClickHouse
+```
 
-- go env -w GO111MODULE=on
-- go env -w GOPROXY=https://goproxy.cn,direct
+详细设计见：
 
-### 2. 安装依赖
+- [需求规格](docs/需求规格.md)
+- [架构设计](docs/架构设计.md)
+- [数据库设计](docs/数据库设计.md)
+- [开发路线](docs/开发路线.md)
+- [接口设计](docs/接口设计.md)
 
-- go get -u github.com/go-sql-driver/mysql
-- go get github.com/redis/go-redis/v9
+## 快速启动
 
-### 3. 初始化数据库(`init.sql`)
+需要 Docker Desktop。
 
-### 4. 配置文件 (`config.json`)
+```powershell
+Copy-Item deploy\.env.example deploy\.env
+docker compose --env-file deploy\.env -f deploy\docker-compose.yml up -d --build
+```
 
-### 4. 启动服务
+默认地址：
 
-bash
+| 服务 | 地址 |
+| --- | --- |
+| API | http://localhost:18080 |
+| Worker 健康检查 | http://localhost:18081/health/live |
+| 存活检查 | http://localhost:18080/health/live |
+| 就绪检查 | http://localhost:18080/health/ready |
+| Prometheus 指标 | http://localhost:18080/metrics |
 
-go mod tidy
+MySQL 和 Redis 默认不映射到宿主机端口，避免与本地已有实例冲突。需要直接访问时可通过容器内网或临时 Compose override。
 
-go run cmd/server/main.go
+停止环境：
 
-## API 文档
+```powershell
+docker compose --env-file deploy\.env -f deploy\docker-compose.yml down
+```
 
-### 创建短链
+## 本地开发
 
-bash
+先启动 MySQL 和 Redis，然后执行迁移：
 
-curl -X POST http://localhost:8080/create
-\
+```powershell
+Copy-Item .env.example .env
+go run .\cmd\migrate up
+go run .\cmd\api
+```
 
--H "Content-Type: application/json" \
+另开终端启动 Worker：
 
--d '{"original_url": "https://www.baidu.com
-"}'
+```powershell
+go run .\cmd\worker
+```
 
-**响应示例：**
-json {
+本地 API 默认监听 `:8080`。如果与已有服务冲突，修改 `.env` 中的 `HTTP_ADDR`。
 
-"short_code": "aZ9x2P",
+## 认证接口
 
-"full_url": "http://localhost:8080/r/aZ9x2P",
+### 注册
 
-"message": "Short URL created successfully"
+```http
+POST /api/v1/auth/register
+Content-Type: application/json
 
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "display_name": "User"
 }
+```
 
-### 访问短链
-http://localhost:8080/r/aZ9x2P
+注册成功后返回用户、默认工作空间、Access Token 和 Refresh Token。
 
-##  架构图
-Client → 限流中间件 → Go Service → Redis → MySQL
+### 登录
 
-↓
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
 
-协程池（异步更新点击量）
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
 
-## 📖 技术选型说明
-- **为什么不用 Gin？** 学习 Go 原生 HTTP 原理
-- **为什么用 Lua 脚本？** 保证 `INCR` 和 `EXPIRE` 的原子性，防止并发下限流失效。
+### 刷新令牌
+
+```http
+POST /api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "srt_..."
+}
+```
+
+Refresh Token 每次使用后都会轮换。旧 Token 再次使用会被判定为泄漏并撤销整个 Token Family。
+
+### 当前用户
+
+```http
+GET /api/v1/me
+Authorization: Bearer <access-token>
+```
+
+## 质量检查
+
+```powershell
+go test ./...
+go test -race ./...
+go vet ./...
+golangci-lint run ./...
+```
+
+## 目录
+
+```text
+cmd/
+  api/          HTTP API 和公开跳转入口
+  worker/       点击消费、域名验证和后台任务入口
+  migrate/      数据库迁移入口
+internal/
+  identity/     用户、工作空间和认证
+  platform/     配置、MySQL、Redis、可观测性
+  transport/    HTTP 中间件与路由
+  app/          应用装配和生命周期
+migrations/     MySQL 版本化迁移
+deploy/         Docker Compose 和部署配置
+docs/           需求、架构、数据和开发文档
+```
+
+## 当前边界
+
+- 自定义域名将使用 DNS Resolver 抽象，在没有真实域名时通过 Fake Resolver 和 Host 头完成本地验证。
+- ClickHouse 分析链路将在点击事件模块中接入。
+- 旧的实验实现已移除，历史代码仍可从初始 Git 提交恢复。
