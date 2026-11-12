@@ -79,6 +79,11 @@ func (w *Worker) Run(ctx context.Context) error {
 			Block:    time.Second,
 		}).Result()
 		if err != nil && !errors.Is(err, redis.Nil) && ctx.Err() == nil {
+			if strings.Contains(err.Error(), "NOGROUP") {
+				if groupErr := w.ensureGroup(ctx); groupErr == nil {
+					continue
+				}
+			}
 			w.logger.Warn("读取点击事件失败", "error", err)
 			time.Sleep(time.Second)
 		}
@@ -97,6 +102,11 @@ func (w *Worker) Run(ctx context.Context) error {
 			Count:    workerBatchSize,
 		}).Result()
 		if claimErr != nil && !errors.Is(claimErr, redis.Nil) && ctx.Err() == nil {
+			if strings.Contains(claimErr.Error(), "NOGROUP") {
+				if groupErr := w.ensureGroup(ctx); groupErr == nil {
+					continue
+				}
+			}
 			w.logger.Warn("接管 Pending 点击事件失败", "error", claimErr)
 		}
 		if claimErr == nil && len(claimed) > 0 {
