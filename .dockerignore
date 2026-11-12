@@ -7,4 +7,4 @@ tmp
 coverage.out
 *.exe
 web/node_modules
-web/dist
+web/.tmp

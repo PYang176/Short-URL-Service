@@ -36,12 +36,13 @@ services:
     command: ["/app/api"]
     environment:
       APP_ENV: development
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18088}
       HTTP_ADDR: :8080
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-before-production-123456}
       ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-only-analytics-secret-change-in-production}
       DOMAIN_VERIFY_MODE: ${DOMAIN_VERIFY_MODE:-mock}
       CUSTOM_DOMAIN_CNAME: ${CUSTOM_DOMAIN_CNAME:-links.localhost}
+      HTTP_TRUSTED_PROXIES: ${HTTP_TRUSTED_PROXIES:-127.0.0.1,::1,172.16.0.0/12}
       MYSQL_DSN: "${MYSQL_DSN:-short_url:short_url@tcp(host.docker.internal:3306)/short_url?parseTime=true&loc=UTC&charset=utf8mb4&collation=utf8mb4_unicode_ci}"
       REDIS_ADDR: "redis:6379"
     ports:
@@ -71,6 +72,7 @@ services:
       ANALYTICS_HASH_SECRET: ${ANALYTICS_HASH_SECRET:-dev-only-analytics-secret-change-in-production}
       DOMAIN_VERIFY_MODE: ${DOMAIN_VERIFY_MODE:-mock}
       CUSTOM_DOMAIN_CNAME: ${CUSTOM_DOMAIN_CNAME:-links.localhost}
+      HTTP_TRUSTED_PROXIES: ${HTTP_TRUSTED_PROXIES:-127.0.0.1,::1,172.16.0.0/12}
       MYSQL_DSN: "${MYSQL_DSN:-short_url:short_url@tcp(host.docker.internal:3306)/short_url?parseTime=true&loc=UTC&charset=utf8mb4&collation=utf8mb4_unicode_ci}"
       REDIS_ADDR: "redis:6379"
     ports:
@@ -82,6 +84,21 @@ services:
         condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    ports:
+      - "${WEB_PORT:-18088}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
 volumes:
   redis_data:
