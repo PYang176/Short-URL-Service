@@ -2,7 +2,7 @@
 
 一个面向高并发跳转和访问分析的短链接平台。项目采用模块化单体结构，提供 `api` 和 `worker` 两个独立运行角色，覆盖短链管理、自定义域名、动态二维码、点击分析和可视化报表。
 
-> 当前处于完整版开发阶段。认证、工作空间、数据库迁移和本地运行环境已经完成，短链、域名、二维码和分析模块正在按路线逐步实现。
+> 当前处于完整版开发阶段。认证、工作空间、短链 CRUD、默认域名跳转和 Redis 缓存已经完成，二维码、自定义域名和点击分析正在按路线逐步实现。
 
 ## 已实现
 
@@ -18,6 +18,12 @@
 - 不透明 Refresh Token 和轮换重放检测。
 - 注册时原子创建用户、工作空间和 Owner 成员关系。
 - 当前用户资料查询和修改。
+- 短链接创建、列表、详情、修改、停用和软删除。
+- 随机 Base62 短码、自定义别名和短码唯一约束。
+- 目标 URL 规范化和安全校验。
+- Redis 跳转缓存、空值缓存、TTL 抖动和并发回源合并。
+- 修改或删除链接后的缓存主动失效。
+- `GET /r/{slug}` 默认域名公开跳转。
 - Docker Compose 完整本地依赖。
 
 ## 技术栈
@@ -152,6 +158,42 @@ GET /api/v1/me
 Authorization: Bearer <access-token>
 ```
 
+### 创建短链
+
+```http
+POST /api/v1/links
+Authorization: Bearer <access-token>
+Content-Type: application/json
+
+{
+  "destination_url": "https://example.com/landing",
+  "alias": "launch",
+  "title": "Launch page",
+  "redirect_code": 302
+}
+```
+
+创建成功后返回完整短链，例如：
+
+```text
+http://localhost:18080/r/launch
+```
+
+### 链接管理
+
+```text
+GET    /api/v1/links
+GET    /api/v1/links/{id}
+PATCH  /api/v1/links/{id}
+DELETE /api/v1/links/{id}
+```
+
+### 公开跳转
+
+```text
+GET /r/{slug}
+```
+
 ## 质量检查
 
 ```powershell
@@ -182,4 +224,5 @@ docs/           需求、架构、数据和开发文档
 
 - 自定义域名将使用 DNS Resolver 抽象，在没有真实域名时通过 Fake Resolver 和 Host 头完成本地验证。
 - 点击分析使用 Redis Streams 异步缓冲，并通过 MySQL 明细表和每日聚合表提供统计查询。
+- 当前只启用平台默认域名，自定义域名和二维码尚未接入。
 - 旧的实验实现已移除，历史代码仍可从初始 Git 提交恢复。

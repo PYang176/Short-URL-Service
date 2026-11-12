@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/PYang176/Short-URL-Service/internal/identity"
+	"github.com/PYang176/Short-URL-Service/internal/link"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 )
@@ -27,6 +28,8 @@ type Dependencies struct {
 	Metrics *observability.Metrics
 	// Identity 是认证和资料接口处理器
 	Identity *identity.Handler
+	// Links 是短链管理和公开跳转接口处理器
+	Links *link.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
 	Tokens *identity.TokenManager
 	// APIVersion 是响应中展示的接口版本
@@ -75,6 +78,13 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.Use(RequireAuth(deps.Tokens))
 	protected.GET("/me", deps.Identity.Profile)
 	protected.PATCH("/me", deps.Identity.UpdateProfile)
+	protected.POST("/links", deps.Links.Create)
+	protected.GET("/links", deps.Links.List)
+	protected.GET("/links/:id", deps.Links.Get)
+	protected.PATCH("/links/:id", deps.Links.Update)
+	protected.DELETE("/links/:id", deps.Links.Delete)
+
+	router.GET("/r/:slug", deps.Links.Redirect)
 
 	router.NoRoute(func(c *gin.Context) {
 		requestID, _ := c.Get(requestIDKey)

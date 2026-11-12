@@ -1,0 +1,131 @@
+package link
+
+import "time"
+
+const (
+	// StatusActive 表示链接可以正常跳转
+	StatusActive uint8 = 1
+	// StatusDisabled 表示链接已被用户停用
+	StatusDisabled uint8 = 2
+
+	// DomainStatusPending 表示域名等待验证
+	DomainStatusPending uint8 = 1
+	// DomainStatusVerifying 表示域名正在验证
+	DomainStatusVerifying uint8 = 2
+	// DomainStatusVerified 表示域名可以承载跳转
+	DomainStatusVerified uint8 = 3
+	// DomainStatusFailed 表示域名验证失败
+	DomainStatusFailed uint8 = 4
+	// DomainStatusDisabled 表示域名已停止使用
+	DomainStatusDisabled uint8 = 5
+)
+
+// Domain 是短链 Host 的权威记录
+type Domain struct {
+	// ID 是 ULID 域名标识
+	ID string
+	// WorkspaceID 是可空的 ULID 工作空间标识；空值表示平台默认域名
+	WorkspaceID *string
+	// Hostname 是规范化后的小写域名
+	Hostname string
+	// Status 是域名状态，有效值为 DomainStatusPending 至 DomainStatusDisabled
+	Status uint8
+	// CreatedAt 是域名创建的 UTC 时间
+	CreatedAt time.Time
+	// UpdatedAt 是域名最近修改的 UTC 时间
+	UpdatedAt time.Time
+}
+
+// Link 是可跳转的短链接
+type Link struct {
+	// ID 是 ULID 链接标识
+	ID string
+	// WorkspaceID 是链接所属的 ULID 工作空间标识
+	WorkspaceID string
+	// DomainID 是链接所用 ULID 域名标识
+	DomainID string
+	// Slug 是大小写敏感的唯一短码
+	Slug string
+	// DestinationURL 是规范化后的目标地址
+	DestinationURL string
+	// DestinationHash 是目标地址的 SHA-256 摘要
+	DestinationHash []byte
+	// Title 是用户可编辑的链接标题
+	Title string
+	// Notes 是用户可编辑的备注
+	Notes string
+	// Status 是链接状态，有效值为 StatusActive 或 StatusDisabled
+	Status uint8
+	// RedirectCode 是 301 或 302
+	RedirectCode int
+	// StartsAt 是可选生效时间的 UTC 值
+	StartsAt *time.Time
+	// ExpiresAt 是可选过期时间的 UTC 值
+	ExpiresAt *time.Time
+	// HumanClicks 是人类点击次数，后续由分析汇总维护
+	HumanClicks int64
+	// Version 是链接元数据版本，写入缓存时用于识别变更
+	Version int
+	// CreatedAt 是链接创建的 UTC 时间
+	CreatedAt time.Time
+	// UpdatedAt 是链接最近修改的 UTC 时间
+	UpdatedAt time.Time
+	// DeletedAt 是软删除的 UTC 时间，nil 表示未删除
+	DeletedAt *time.Time
+}
+
+// CreateInput 是创建短链接所需的业务参数
+type CreateInput struct {
+	// DestinationURL 是用户输入的原始目标地址
+	DestinationURL string
+	// Alias 是可选自定义短码
+	Alias string
+	// Title 是可选链接标题
+	Title string
+	// Notes 是可选备注
+	Notes string
+	// RedirectCode 是 301 或 302
+	RedirectCode int
+	// StartsAt 是可选生效时间
+	StartsAt *time.Time
+	// ExpiresAt 是可选过期时间
+	ExpiresAt *time.Time
+}
+
+// UpdateInput 是修改短链接的可选字段
+type UpdateInput struct {
+	// DestinationURL 是可选的新目标地址
+	DestinationURL *string
+	// Title 是可选的新标题
+	Title *string
+	// Notes 是可选的新备注
+	Notes *string
+	// Status 是可选的新状态
+	Status *uint8
+	// RedirectCode 是可选的新跳转状态码
+	RedirectCode *int
+	// ExpiresAt 是可选的新过期时间；ClearExpiresAt 为 true 时清除
+	ExpiresAt *time.Time
+	// ClearExpiresAt 表示删除已有过期时间
+	ClearExpiresAt bool
+}
+
+// CachedLink 是 Redis 中用于跳转的最小链接快照
+type CachedLink struct {
+	// ID 是 ULID 链接标识
+	ID string `json:"id"`
+	// WorkspaceID 是链接所属的 ULID 工作空间标识
+	WorkspaceID string `json:"workspace_id"`
+	// DestinationURL 是当前跳转目标
+	DestinationURL string `json:"destination_url"`
+	// Status 是链接状态
+	Status uint8 `json:"status"`
+	// RedirectCode 是 301 或 302
+	RedirectCode int `json:"redirect_code"`
+	// StartsAt 是可选生效时间
+	StartsAt *time.Time `json:"starts_at,omitempty"`
+	// ExpiresAt 是可选过期时间
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Version 是缓存对应的链接版本
+	Version int `json:"version"`
+}

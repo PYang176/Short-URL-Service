@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/PYang176/Short-URL-Service/internal/identity"
+	"github.com/PYang176/Short-URL-Service/internal/link"
 	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/database"
@@ -58,6 +59,15 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		cfg.Auth.RefreshTokenTTL,
 	)
 	identityHandler := identity.NewHandler(identityService)
+	linkRepo := link.NewMySQLRepository(db)
+	linkService, err := link.NewService(linkRepo, redisClient, logger, cfg.PublicBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("初始化短链接服务失败: %w", err)
+	}
+	if err := linkService.Initialize(ctx); err != nil {
+		return nil, fmt.Errorf("初始化默认短链域名失败: %w", err)
+	}
+	linkHandler := link.NewHandler(linkService)
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:     cfg,
@@ -66,6 +76,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		Health:     health,
 		Metrics:    metrics,
 		Identity:   identityHandler,
+		Links:      linkHandler,
 		Tokens:     tokenManager,
 		APIVersion: "v1",
 	})
