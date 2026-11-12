@@ -38,7 +38,7 @@
 | 事务数据库 | MySQL 8 |
 | 缓存与事件 | Redis 7、Redis Streams |
 | 分析存储 | MySQL 8 点击明细与预聚合表 |
-| 前端 | Vue 3、TypeScript、ECharts |
+| 前端 | Vue 3、TypeScript、项目内 SVG/CSS 图表 |
 | 对象存储 | MinIO |
 | 反向代理 | Caddy |
 | 可观测性 | Prometheus、Grafana、`log/slog` |
@@ -136,6 +136,17 @@ go run .\cmd\worker
 ```
 
 本地 API 默认监听 `:8080`。如果与已有服务冲突，修改 `.env` 中的 `HTTP_ADDR`。
+
+启动 Vue 管理端：
+
+```powershell
+Set-Location web
+npm install
+npm run dev
+```
+
+前端地址为 `http://127.0.0.1:5173`，开发代理会转发 `/api` 和 `/r` 到本地 API。
+前后端联调时，API 的 `PUBLIC_BASE_URL` 需要设置为前端地址。
 
 ## 认证接口
 
@@ -271,12 +282,15 @@ cmd/
   migrate/      数据库迁移入口
 internal/
   identity/     用户、工作空间和认证
+  link/         短链接、缓存、跳转和二维码
+  analytics/    Redis Streams、点击存储和分析查询
   platform/     配置、MySQL、Redis、可观测性
   transport/    HTTP 中间件与路由
   app/          应用装配和生命周期
 migrations/     MySQL 版本化迁移
 deploy/         Docker Compose 和部署配置
 docs/           需求、架构、数据和开发文档
+web/            Vue 3 管理端与浏览器验收脚本
 ```
 
 ## 当前边界

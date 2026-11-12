@@ -20,6 +20,9 @@ cmd/server/server
 
 # Go
 vendor/
+node_modules/
+web/dist/
+web/.tmp/
 
 # Local scratch and test output
 scratch/
