@@ -6,7 +6,7 @@ Vue 3 + TypeScript 管理端，覆盖登录注册、工作台、短链管理、�
 ## 本地启动
 
 ```powershell
-npm install
+npm ci
 npm run dev
 ```
 
@@ -39,7 +39,7 @@ python scripts\e2e.py
 - 创建短链接。
 - 添加并模拟验证自定义域名。
 - 使用自定义域名创建短链并通过 Host 请求跳转。
-- 人类与机器人 User-Agent 请求。
+- 未命中与命中 UA 规则的请求。
 - Redis Streams、Worker 和 MySQL 点击汇总。
 - 分析页读取。
 - PNG/SVG 二维码下载。
@@ -49,5 +49,4 @@ python scripts\e2e.py
 
 ## 图表实现
 
-点击趋势使用项目内 SVG，排名使用 CSS 条，不引入大型图表运行时。
-CSP、响应式布局和无脚本图表都更容易控制。
+点击趋势使用项目内 SVG，排名使用 CSS 条，不引入图表运行时依赖。

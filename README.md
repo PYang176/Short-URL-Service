@@ -55,6 +55,15 @@ cmd/api ----------------- MySQL（宿主机）
 API、Worker 和 Web 可以容器化。MySQL 不放入 Docker，避免本地数据库重复和
 数据卷迁移；Redis 使用 Docker。
 
+## 文档
+
+- [需求规格](docs/需求规格.md)：当前基线与后续目标范围。
+- [架构设计](docs/架构设计.md)：已实现链路和未实现模块的边界。
+- [数据库设计](docs/数据库设计.md)：已落地表和目标表设计。
+- [接口设计](docs/接口设计.md)：已实现接口与规划接口。
+- [开发路线](docs/开发路线.md)：里程碑、验收项和当前技术债。
+- [工程协作规则](AGENTS.md)：本地资源、测试和提交约束。
+
 ## 快速启动
 
 需要：
@@ -158,7 +167,7 @@ demo@example.com
 demo12345
 ```
 
-脚本会幂等创建四个演示短链，并生成人类和 Googlebot 点击。
+脚本会幂等创建四个演示短链，并生成未命中 UA 规则的请求和 Googlebot 请求。
 
 ## 安全与限流
 
@@ -181,6 +190,11 @@ X-RateLimit-Remaining: 0
 ```
 
 所有策略都可通过 `.env` 覆盖。
+
+Compose 要求显式设置 `MYSQL_DSN`、`JWT_SECRET` 和
+`ANALYTICS_HASH_SECRET`，不提供内置默认密钥。缺失配置时 Compose 直接报错。
+生产环境还必须设置 `APP_ENV=production`；服务会拒绝长度不足或来自示例配置
+的密钥。
 
 创建短链接支持：
 
@@ -273,8 +287,8 @@ go test -tags=integration ./...
 python web\scripts\e2e.py
 ```
 
-覆盖注册、域名验证、自定义域名短链、人类/机器人点击、分析、二维码下载、
-编辑链接和移动端布局。
+覆盖注册、域名验证、自定义域名短链、UA 分类、分析、二维码下载、编辑链接
+和移动端布局。
 
 ## 压测结果
 
@@ -316,6 +330,8 @@ deploy               Docker Compose
 
 - 点击分析当前直接查询 MySQL 明细，尚未建立预聚合表。
 - 机器人标记基于手写 User-Agent 子串规则，不等于验证真人。
+- 浏览器当前使用 `localStorage` 保存 Access Token 和 Refresh Token；CSP
+  可降低脚本注入风险，但不能替代 HttpOnly Cookie 和 CSRF 防护。
 - 自定义域名生产环境尚未接 Caddy 自动证书。
 - 暂未实现文件夹、标签、API Key、Webhook、管理员治理和团队角色。
 - 自定义域名的管理入口仍由平台域名提供；自定义域名根路径由 API 处理。

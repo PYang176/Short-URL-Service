@@ -16,8 +16,8 @@ $env:RATE_LIMIT_REDIRECT_LIMIT='1000000'
 
 ## 运行
 
-本机已复用 RelayIM 使用的 `grafana/k6:0.57.0` 镜像，无需再次安装 k6。
-在项目根目录启动 API、Worker 和 Redis 后，使用 Docker Desktop 运行：
+当前验证环境使用已有的 `grafana/k6:0.57.0` 镜像。在项目根目录启动 API、
+Worker 和 Redis 后，使用 Docker Desktop 运行：
 
 ```powershell
 docker run --rm `
