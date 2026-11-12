@@ -28,16 +28,16 @@ func TestServiceCreateResolveAndInvalidate(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	destination, code, err := service.Resolve(context.Background(), created.Slug)
+	resolved, err := service.Resolve(context.Background(), created.Slug)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if destination != "https://example.com/start" || code != 302 {
-		t.Fatalf("Resolve() = %q, %d; want https://example.com/start, 302", destination, code)
+	if resolved.DestinationURL != "https://example.com/start" || resolved.RedirectCode != 302 {
+		t.Fatalf("Resolve() = %q, %d; want https://example.com/start, 302", resolved.DestinationURL, resolved.RedirectCode)
 	}
 
 	lookupCount := repo.lookupCount()
-	if _, _, err := service.Resolve(context.Background(), created.Slug); err != nil {
+	if _, err := service.Resolve(context.Background(), created.Slug); err != nil {
 		t.Fatalf("second Resolve() error = %v", err)
 	}
 	if repo.lookupCount() != lookupCount {
@@ -50,18 +50,18 @@ func TestServiceCreateResolveAndInvalidate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	destination, _, err = service.Resolve(context.Background(), created.Slug)
+	resolved, err = service.Resolve(context.Background(), created.Slug)
 	if err != nil {
 		t.Fatalf("Resolve() after update error = %v", err)
 	}
-	if destination != newDestination {
-		t.Fatalf("更新后目标 = %q, want %q", destination, newDestination)
+	if resolved.DestinationURL != newDestination {
+		t.Fatalf("更新后目标 = %q, want %q", resolved.DestinationURL, newDestination)
 	}
 
 	if err := service.Delete(context.Background(), "workspace-1", created.ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if _, _, err := service.Resolve(context.Background(), created.Slug); !errors.Is(err, ErrNotFound) {
+	if _, err := service.Resolve(context.Background(), created.Slug); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("删除后 Resolve() error = %v, want ErrNotFound", err)
 	}
 }
@@ -82,12 +82,12 @@ func TestServiceResolveFallsBackWhenRedisUnavailable(t *testing.T) {
 		t.Fatalf("关闭 Redis 失败: %v", err)
 	}
 
-	destination, _, err := service.Resolve(context.Background(), created.Slug)
+	resolved, err := service.Resolve(context.Background(), created.Slug)
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if destination != "https://example.com/fallback" {
-		t.Fatalf("Resolve() = %q, want fallback destination", destination)
+	if resolved.DestinationURL != "https://example.com/fallback" {
+		t.Fatalf("Resolve() = %q, want fallback destination", resolved.DestinationURL)
 	}
 }
 
@@ -106,7 +106,7 @@ func TestServiceResolveLinkWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() future error = %v", err)
 	}
-	if _, _, err := service.Resolve(context.Background(), future.Slug); !errors.Is(err, ErrNotStarted) {
+	if _, err := service.Resolve(context.Background(), future.Slug); !errors.Is(err, ErrNotStarted) {
 		t.Fatalf("未开始链接 Resolve() error = %v, want ErrNotStarted", err)
 	}
 
@@ -119,7 +119,7 @@ func TestServiceResolveLinkWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() expired error = %v", err)
 	}
-	if _, _, err := service.Resolve(context.Background(), expired.Slug); !errors.Is(err, ErrGone) {
+	if _, err := service.Resolve(context.Background(), expired.Slug); !errors.Is(err, ErrGone) {
 		t.Fatalf("过期链接 Resolve() error = %v, want ErrGone", err)
 	}
 }

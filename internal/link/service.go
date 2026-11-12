@@ -242,20 +242,20 @@ func (s *Service) Delete(ctx context.Context, workspaceID, linkID string) error 
 	return nil
 }
 
-// Resolve 解析默认域名短码并返回可跳转目标
-func (s *Service) Resolve(ctx context.Context, slug string) (string, int, error) {
+// Resolve 解析默认域名短码并返回跳转元数据
+func (s *Service) Resolve(ctx context.Context, slug string) (ResolveResult, error) {
 	if s.defaultDomain == nil {
-		return "", 0, fmt.Errorf("默认域名尚未初始化")
+		return ResolveResult{}, fmt.Errorf("默认域名尚未初始化")
 	}
 	cacheKey := linkCacheKey(s.defaultDomain.ID, slug)
 
 	if cached, found, err := s.readCache(ctx, cacheKey); err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return "", 0, ErrNotFound
+			return ResolveResult{}, ErrNotFound
 		}
 		s.logger.Warn("读取链接缓存失败，回源 MySQL", "error", err)
 	} else if found {
-		return s.evaluateCached(cached, s.now())
+		return s.toResolveResult(cached, slug)
 	}
 
 	value, err, _ := s.cacheGroup.Do(cacheKey, func() (any, error) {
@@ -279,13 +279,13 @@ func (s *Service) Resolve(ctx context.Context, slug string) (string, int, error)
 		return cached, nil
 	})
 	if err != nil {
-		return "", 0, err
+		return ResolveResult{}, err
 	}
 	cached, ok := value.(*CachedLink)
 	if !ok {
-		return "", 0, fmt.Errorf("链接缓存类型无效")
+		return ResolveResult{}, fmt.Errorf("链接缓存类型无效")
 	}
-	return s.evaluateCached(cached, s.now())
+	return s.toResolveResult(cached, slug)
 }
 
 // ShortURL 返回默认域名下的完整短链地址
@@ -297,18 +297,26 @@ func (s *Service) ShortURL(link *Link) string {
 	return target.String()
 }
 
-// evaluateCached 根据时间窗口和状态判断缓存链接是否可跳转
-func (s *Service) evaluateCached(cached *CachedLink, now time.Time) (string, int, error) {
+// toResolveResult 根据时间窗口和状态生成可跳转元数据
+func (s *Service) toResolveResult(cached *CachedLink, slug string) (ResolveResult, error) {
+	now := s.now()
 	if cached.Status != StatusActive {
-		return "", 0, ErrGone
+		return ResolveResult{}, ErrGone
 	}
 	if cached.StartsAt != nil && now.Before(*cached.StartsAt) {
-		return "", 0, ErrNotStarted
+		return ResolveResult{}, ErrNotStarted
 	}
 	if cached.ExpiresAt != nil && !now.Before(*cached.ExpiresAt) {
-		return "", 0, ErrGone
+		return ResolveResult{}, ErrGone
 	}
-	return cached.DestinationURL, cached.RedirectCode, nil
+	return ResolveResult{
+		LinkID:         cached.ID,
+		WorkspaceID:    cached.WorkspaceID,
+		DomainID:       s.defaultDomain.ID,
+		Slug:           slug,
+		DestinationURL: cached.DestinationURL,
+		RedirectCode:   cached.RedirectCode,
+	}, nil
 }
 
 // readCache 读取并反序列化链接缓存

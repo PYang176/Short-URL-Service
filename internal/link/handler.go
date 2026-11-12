@@ -1,8 +1,10 @@
 package link
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,11 +18,15 @@ import (
 // Handler 提供短链接管理和公开跳转 HTTP 接口
 type Handler struct {
 	service *Service
+	// recorder 记录成功跳转产生的点击事件
+	recorder ClickRecorder
+	// logger 记录点击写入失败等非致命错误
+	logger *slog.Logger
 }
 
 // NewHandler 创建短链接 HTTP 处理器
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, recorder ClickRecorder, logger *slog.Logger) *Handler {
+	return &Handler{service: service, recorder: recorder, logger: logger}
 }
 
 type createRequest struct {
@@ -197,12 +203,27 @@ func (h *Handler) Delete(c *gin.Context) {
 
 // Redirect 解析短码并返回 HTTP 跳转
 func (h *Handler) Redirect(c *gin.Context) {
-	destination, redirectCode, err := h.service.Resolve(c.Request.Context(), c.Param("slug"))
+	result, err := h.service.Resolve(c.Request.Context(), c.Param("slug"))
 	if err != nil {
 		writeLinkError(c, err)
 		return
 	}
-	http.Redirect(c.Writer, c.Request, destination, redirectCode)
+	if h.recorder != nil {
+		recordCtx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Millisecond)
+		defer cancel()
+		if err := h.recorder.RecordClick(recordCtx, ClickContext{
+			ResolveResult: result,
+			IP:            c.ClientIP(),
+			UserAgent:     c.Request.UserAgent(),
+			Referrer:      c.Request.Referer(),
+			Language:      c.GetHeader("Accept-Language"),
+			Country:       c.GetHeader("CF-IPCountry"),
+			Query:         c.Request.URL.Query(),
+		}); err != nil {
+			h.logger.Warn("写入点击事件失败", "link_id", result.LinkID, "error", err)
+		}
+	}
+	http.Redirect(c.Writer, c.Request, result.DestinationURL, result.RedirectCode)
 }
 
 // toResponse 将链接模型转换为 HTTP DTO

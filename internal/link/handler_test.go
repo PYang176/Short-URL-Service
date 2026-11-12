@@ -3,6 +3,8 @@ package link
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,7 +19,7 @@ func TestHandlerCreateListAndRedirect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, _, cleanup := testService(t)
 	defer cleanup()
-	handler := NewHandler(service)
+	handler := NewHandler(service, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	router := gin.New()
 	api := router.Group("")
@@ -64,7 +66,7 @@ func TestHandlerMapsSlugConflict(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, _, cleanup := testService(t)
 	defer cleanup()
-	handler := NewHandler(service)
+	handler := NewHandler(service, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	router := gin.New()
 	router.Use(withWorkspace("workspace-1"))

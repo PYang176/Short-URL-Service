@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/PYang176/Short-URL-Service/internal/analytics"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
 	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
@@ -67,7 +68,11 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 	if err := linkService.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("初始化默认短链域名失败: %w", err)
 	}
-	linkHandler := link.NewHandler(linkService)
+	clickRecorder := analytics.NewRecorder(redisClient, logger, cfg.Analytics)
+	linkHandler := link.NewHandler(linkService, clickRecorder, logger)
+	analyticsRepo := analytics.NewMySQLRepository(db)
+	analyticsService := analytics.NewService(analyticsRepo, linkRepo)
+	analyticsHandler := analytics.NewHandler(analyticsService, logger)
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:     cfg,
@@ -77,6 +82,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		Metrics:    metrics,
 		Identity:   identityHandler,
 		Links:      linkHandler,
+		Analytics:  analyticsHandler,
 		Tokens:     tokenManager,
 		APIVersion: "v1",
 	})

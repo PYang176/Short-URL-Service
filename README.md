@@ -24,6 +24,9 @@
 - Redis 跳转缓存、空值缓存、TTL 抖动和并发回源合并。
 - 修改或删除链接后的缓存主动失效。
 - `GET /r/{slug}` 默认域名公开跳转。
+- 跳转点击写入 Redis Streams。
+- Worker 批量、幂等写入 MySQL 点击明细。
+- 单链接总点击、独立访客、趋势、设备和浏览器分析。
 - Docker Compose 管理 Redis、API、Worker 和迁移任务。
 
 ## 技术栈
@@ -218,6 +221,16 @@ DELETE /api/v1/links/{id}
 GET /r/{slug}
 ```
 
+### 点击分析
+
+```http
+GET /api/v1/links/{id}/analytics?days=30
+Authorization: Bearer <access-token>
+```
+
+返回总点击、人类点击、机器人点击、独立访客、趋势、国家、设备、
+操作系统、浏览器和来源分布。
+
 ## 质量检查
 
 ```powershell
@@ -254,6 +267,7 @@ docs/           需求、架构、数据和开发文档
 ## 当前边界
 
 - 自定义域名将使用 DNS Resolver 抽象，在没有真实域名时通过 Fake Resolver 和 Host 头完成本地验证。
-- 点击分析使用 Redis Streams 异步缓冲，并通过 MySQL 明细表和每日聚合表提供统计查询。
+- 点击分析使用 Redis Streams 异步缓冲，当前直接查询 MySQL 点击明细；
+  在真实数据证明需要后再增加汇总表。
 - 当前只启用平台默认域名，自定义域名和二维码尚未接入。
 - 旧的实验实现已移除，历史代码仍可从初始 Git 提交恢复。

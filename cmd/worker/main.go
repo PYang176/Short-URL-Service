@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/PYang176/Short-URL-Service/internal/analytics"
 	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/database"
@@ -90,6 +91,19 @@ func run() error {
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	analyticsRepo := analytics.NewMySQLRepository(db)
+	clickWorker := analytics.NewWorker(
+		analyticsRepo,
+		redisClient,
+		logger,
+		cfg.Analytics.ClickStream,
+		cfg.Analytics.ConsumerGroup,
+	)
+	workerErrCh := make(chan error, 1)
+	go func() {
+		workerErrCh <- clickWorker.Run(runCtx)
+	}()
+
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("Worker 服务启动", "health_addr", cfg.HTTP.Addr, "env", cfg.Env)
@@ -102,12 +116,18 @@ func run() error {
 			return err
 		}
 		return nil
+	case err := <-workerErrCh:
+		stop()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+		return err
 	case <-runCtx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("关闭 Worker 健康服务失败: %w", err)
 		}
-		return nil
+		return <-workerErrCh
 	}
 }

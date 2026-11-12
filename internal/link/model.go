@@ -1,6 +1,10 @@
 package link
 
-import "time"
+import (
+	"context"
+	"net/url"
+	"time"
+)
 
 const (
 	// StatusActive 表示链接可以正常跳转
@@ -128,4 +132,44 @@ type CachedLink struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// Version 是缓存对应的链接版本
 	Version int `json:"version"`
+}
+
+// ResolveResult 是公开跳转解析后的链接元数据
+type ResolveResult struct {
+	// LinkID 是 ULID 链接标识
+	LinkID string
+	// WorkspaceID 是链接所属工作空间
+	WorkspaceID string
+	// DomainID 是链接域名
+	DomainID string
+	// Slug 是访问的短码
+	Slug string
+	// DestinationURL 是最终跳转目标
+	DestinationURL string
+	// RedirectCode 是 301 或 302
+	RedirectCode int
+}
+
+// ClickContext 是跳转请求交给点击记录器的最小上下文
+type ClickContext struct {
+	// ResolveResult 是已解析链接的元数据
+	ResolveResult
+	// IP 是经过代理配置解析后的客户端地址
+	IP string
+	// UserAgent 是请求的原始 User-Agent
+	UserAgent string
+	// Referrer 是请求来源页
+	Referrer string
+	// Language 是 Accept-Language 原文
+	Language string
+	// Country 是可信代理提供的 ISO 国家代码
+	Country string
+	// Query 是访问短链时携带的查询参数
+	Query url.Values
+}
+
+// ClickRecorder 记录一次成功的公开跳转
+type ClickRecorder interface {
+	// RecordClick 将点击上下文写入异步事件队列
+	RecordClick(ctx context.Context, click ClickContext) error
 }

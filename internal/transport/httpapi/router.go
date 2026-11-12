@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/PYang176/Short-URL-Service/internal/analytics"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
@@ -30,6 +31,8 @@ type Dependencies struct {
 	Identity *identity.Handler
 	// Links 是短链管理和公开跳转接口处理器
 	Links *link.Handler
+	// Analytics 是点击分析接口处理器
+	Analytics *analytics.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
 	Tokens *identity.TokenManager
 	// APIVersion 是响应中展示的接口版本
@@ -83,6 +86,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.GET("/links/:id", deps.Links.Get)
 	protected.PATCH("/links/:id", deps.Links.Update)
 	protected.DELETE("/links/:id", deps.Links.Delete)
+	protected.GET("/links/:id/analytics", deps.Analytics.Overview)
 
 	router.GET("/r/:slug", deps.Links.Redirect)
 

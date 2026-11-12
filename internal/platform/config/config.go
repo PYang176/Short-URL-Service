@@ -34,6 +34,8 @@ type Config struct {
 	MySQL MySQLConfig
 	// Redis 控制缓存、限流和事件 Stream 连接
 	Redis RedisConfig
+	// Analytics 控制点击事件队列和访客匿名化
+	Analytics AnalyticsConfig
 }
 
 // HTTPConfig 控制 HTTP 服务端行为
@@ -94,6 +96,16 @@ type RedisConfig struct {
 	WriteTimeout time.Duration
 }
 
+// AnalyticsConfig 定义点击事件处理参数
+type AnalyticsConfig struct {
+	// HashSecret 是访客匿名哈希使用的 HMAC 密钥
+	HashSecret string
+	// ClickStream 是保存点击事件的 Redis Stream 名称
+	ClickStream string
+	// ConsumerGroup 是点击事件消费者组名称
+	ConsumerGroup string
+}
+
 // Load 从可选 .env 和环境变量读取配置并完成启动校验
 func Load() (Config, error) {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -136,6 +148,11 @@ func Load() (Config, error) {
 			ReadTimeout:  getDuration("REDIS_READ_TIMEOUT", 2*time.Second),
 			WriteTimeout: getDuration("REDIS_WRITE_TIMEOUT", 2*time.Second),
 		},
+		Analytics: AnalyticsConfig{
+			HashSecret:    getEnv("ANALYTICS_HASH_SECRET", "dev-only-analytics-secret-change-in-production"),
+			ClickStream:   getEnv("CLICK_STREAM", "shorturl:clicks"),
+			ConsumerGroup: getEnv("CLICK_CONSUMER_GROUP", "shorturl-analytics"),
+		},
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -170,6 +187,13 @@ func (c Config) Validate() error {
 	}
 	if c.Env == EnvProduction && len(c.Auth.JWTSecret) < 32 {
 		return fmt.Errorf("生产环境 JWT_SECRET 至少需要 32 字节")
+	}
+	if c.Env == EnvProduction && len(c.Analytics.HashSecret) < 32 {
+		return fmt.Errorf("生产环境 ANALYTICS_HASH_SECRET 至少需要 32 字节")
+	}
+	if strings.TrimSpace(c.Analytics.ClickStream) == "" ||
+		strings.TrimSpace(c.Analytics.ConsumerGroup) == "" {
+		return fmt.Errorf("点击事件 Stream 和消费者组不能为空")
 	}
 	if c.MySQL.MaxOpenConns <= 0 || c.MySQL.MaxIdleConns < 0 {
 		return fmt.Errorf("MySQL 连接池参数无效")
