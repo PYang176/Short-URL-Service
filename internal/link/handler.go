@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 )
@@ -93,6 +96,65 @@ type listResponse struct {
 	Items []linkResponse `json:"items"`
 	// NextCursor 是下一页游标，空值表示没有更多数据
 	NextCursor string `json:"next_cursor"`
+}
+
+// QRCode 生成指向稳定短链地址的动态二维码
+func (h *Handler) QRCode(c *gin.Context) {
+	link, err := h.service.Get(
+		c.Request.Context(),
+		c.GetString(identity.ContextWorkspaceID),
+		c.Param("id"),
+	)
+	if err != nil {
+		writeLinkError(c, err)
+		return
+	}
+
+	size := 512
+	if rawSize := c.Query("size"); rawSize != "" {
+		parsed, err := strconv.Atoi(rawSize)
+		if err != nil || parsed < 128 || parsed > 1024 {
+			writeError(c, http.StatusBadRequest, "INVALID_QR_SIZE", "二维码尺寸必须为 128 至 1024")
+			return
+		}
+		size = parsed
+	}
+
+	payload, err := qrPayload(h.service.ShortURL(link))
+	if err != nil {
+		h.logger.Error("生成二维码内容失败", "link_id", link.ID, "error", err)
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	code, err := qrcode.New(payload, qrcode.Medium)
+	if err != nil {
+		h.logger.Error("生成二维码失败", "link_id", link.ID, "error", err)
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	code.DisableBorder = false
+
+	format := strings.ToLower(c.DefaultQuery("format", "png"))
+	c.Header("Cache-Control", "private, max-age=300")
+	switch format {
+	case "png":
+		image, err := code.PNG(size)
+		if err != nil {
+			h.logger.Error("编码二维码 PNG 失败", "link_id", link.ID, "error", err)
+			writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+			return
+		}
+		c.Header("Content-Type", "image/png")
+		c.Header("Content-Disposition", `inline; filename="`+link.Slug+`.png"`)
+		c.Data(http.StatusOK, "image/png", image)
+	case "svg":
+		image := qrSVG(code, size)
+		c.Header("Content-Type", "image/svg+xml")
+		c.Header("Content-Disposition", `inline; filename="`+link.Slug+`.svg"`)
+		c.Data(http.StatusOK, "image/svg+xml", []byte(image))
+	default:
+		writeError(c, http.StatusBadRequest, "INVALID_QR_FORMAT", "二维码格式只支持 png 或 svg")
+	}
 }
 
 // Create 创建当前工作空间下的短链接
@@ -267,6 +329,44 @@ func decodeCursor(cursor string) (*time.Time, string, error) {
 		return nil, "", err
 	}
 	return &createdAt, parts[1], nil
+}
+
+// qrPayload 为短链追加二维码来源标记，便于后续分析扫码流量
+func qrPayload(shortURL string) (string, error) {
+	parsed, err := url.Parse(shortURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("utm_source", "qr")
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+// qrSVG 根据二维码矩阵生成带静区的简单 SVG
+func qrSVG(code *qrcode.QRCode, size int) []byte {
+	bitmap := code.Bitmap()
+	modules := len(bitmap)
+	var path strings.Builder
+	for y, row := range bitmap {
+		for x := 0; x < len(row); {
+			if !row[x] {
+				x++
+				continue
+			}
+			start := x
+			for x < len(row) && row[x] {
+				x++
+			}
+			fmt.Fprintf(&path, "M%d %dh%dv1h-%dz", start, y, x-start, x-start)
+		}
+	}
+
+	svg := fmt.Sprintf(
+		`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" shape-rendering="crispEdges"><rect width="100%%" height="100%%" fill="#fff"/><path d="%s" fill="#000"/></svg>`,
+		size, size, modules, modules, path.String(),
+	)
+	return []byte(svg)
 }
 
 // writeLinkError 将短链领域错误映射为 HTTP 响应

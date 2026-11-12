@@ -86,6 +86,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.GET("/links/:id", deps.Links.Get)
 	protected.PATCH("/links/:id", deps.Links.Update)
 	protected.DELETE("/links/:id", deps.Links.Delete)
+	protected.GET("/links/:id/qr", deps.Links.QRCode)
 	protected.GET("/links/:id/analytics", deps.Analytics.Overview)
 
 	router.GET("/r/:slug", deps.Links.Redirect)

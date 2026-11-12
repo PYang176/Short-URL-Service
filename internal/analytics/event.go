@@ -40,6 +40,6 @@ type Event struct {
 	UTMTerm string `db:"utm_term"`
 	// UTMContent 是 utm_content 参数
 	UTMContent string `db:"utm_content"`
-	// IsBot 表示事件是否来自已识别机器人
+	// IsBot 表示 User-Agent 是否命中项目内手写的机器人子串规则
 	IsBot bool `db:"is_bot"`
 }

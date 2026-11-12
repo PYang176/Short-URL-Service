@@ -153,8 +153,10 @@ func detectBrowser(userAgent string) string {
 	}
 }
 
-// isBot 识别常见爬虫和自动客户端
+// isBot 用项目内手写的 UA 子串规则标记疑似爬虫和自动客户端
 func isBot(userAgent string) bool {
+	// 这是启发式匹配，不调用外部识别服务。未命中规则的流量默认按人类处理。
+
 	botMarkers := []string{
 		"bot", "spider", "crawler", "slurp", "headless",
 		"facebookexternalhit", "bingpreview", "curl/", "wget/",

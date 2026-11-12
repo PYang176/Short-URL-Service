@@ -26,6 +26,7 @@ func TestHandlerCreateListAndRedirect(t *testing.T) {
 	api.Use(withWorkspace("workspace-1"))
 	api.POST("/links", handler.Create)
 	api.GET("/links", handler.List)
+	api.GET("/links/:id/qr", handler.QRCode)
 	router.GET("/r/:slug", handler.Redirect)
 
 	createResponse := performLinkRequest(
@@ -58,6 +59,34 @@ func TestHandlerCreateListAndRedirect(t *testing.T) {
 	}
 	if location := redirectResponse.Header().Get("Location"); location != "https://example.com/handler" {
 		t.Fatalf("Location = %q, want target URL", location)
+	}
+
+	pngResponse := performLinkRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/links/"+created.ID+"/qr?format=png&size=256",
+		"",
+	)
+	if pngResponse.Code != http.StatusOK {
+		t.Fatalf("PNG 二维码状态 = %d, want 200; body=%s", pngResponse.Code, pngResponse.Body.String())
+	}
+	if !bytes.HasPrefix(pngResponse.Body.Bytes(), []byte{0x89, 'P', 'N', 'G'}) {
+		t.Fatal("响应不是 PNG 图片")
+	}
+
+	svgResponse := performLinkRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/links/"+created.ID+"/qr?format=svg&size=256",
+		"",
+	)
+	if svgResponse.Code != http.StatusOK {
+		t.Fatalf("SVG 二维码状态 = %d, want 200; body=%s", svgResponse.Code, svgResponse.Body.String())
+	}
+	if !bytes.Contains(svgResponse.Body.Bytes(), []byte("<svg")) {
+		t.Fatal("响应不是 SVG 图片")
 	}
 }
 
@@ -101,6 +130,17 @@ func TestCursorRoundTrip(t *testing.T) {
 	}
 	if id != created.ID || createdAt == nil || !createdAt.Equal(created.CreatedAt) {
 		t.Fatalf("游标往返结果不匹配")
+	}
+}
+
+// TestQRPayload 验证二维码编码稳定短链并附带来源参数
+func TestQRPayload(t *testing.T) {
+	payload, err := qrPayload("https://short.example.com/r/launch")
+	if err != nil {
+		t.Fatalf("qrPayload() error = %v", err)
+	}
+	if payload != "https://short.example.com/r/launch?utm_source=qr" {
+		t.Fatalf("qrPayload() = %q", payload)
 	}
 }
 

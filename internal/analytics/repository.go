@@ -13,9 +13,9 @@ import (
 type Summary struct {
 	// TotalClicks 是全部点击
 	TotalClicks int64 `json:"total_clicks" db:"total_clicks"`
-	// HumanClicks 是机器人过滤后的点击
+	// HumanClicks 是未命中手写 UA 机器人规则的点击
 	HumanClicks int64 `json:"human_clicks" db:"human_clicks"`
-	// BotClicks 是识别出的机器人点击
+	// BotClicks 是命中手写 UA 机器人规则的点击
 	BotClicks int64 `json:"bot_clicks" db:"bot_clicks"`
 	// UniqueVisitors 是按访客哈希去重后的数量
 	UniqueVisitors int64 `json:"unique_visitors" db:"unique_visitors"`

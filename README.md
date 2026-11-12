@@ -27,6 +27,7 @@
 - 跳转点击写入 Redis Streams。
 - Worker 批量、幂等写入 MySQL 点击明细。
 - 单链接总点击、独立访客、趋势、设备和浏览器分析。
+- 动态二维码 PNG/SVG 生成，二维码编码稳定短链并附带扫码来源参数。
 - Docker Compose 管理 Redis、API、Worker 和迁移任务。
 
 ## 技术栈
@@ -230,6 +231,20 @@ Authorization: Bearer <access-token>
 
 返回总点击、人类点击、机器人点击、独立访客、趋势、国家、设备、
 操作系统、浏览器和来源分布。
+
+当前“机器人”是基于 User-Agent 子串规则的疑似标记，没有接入第三方识别包或
+外部识别服务。未命中规则的流量默认计为人类，因此该指标存在误判和漏判。
+
+### 二维码
+
+```http
+GET /api/v1/links/{id}/qr?format=png&size=512
+Authorization: Bearer <access-token>
+```
+
+`format` 支持 `png` 和 `svg`，`size` 有效范围为 128 至 1024。
+二维码编码 `/r/{slug}?utm_source=qr`，因此修改链接目标后二维码仍然有效，
+扫码访问也会进入点击分析。
 
 ## 质量检查
 
