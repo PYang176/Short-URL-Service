@@ -227,6 +227,13 @@ go vet ./...
 golangci-lint run ./...
 ```
 
+真实 MySQL 集成测试：
+
+```powershell
+$env:SHORTURL_TEST_MYSQL_DSN='user:password@tcp(127.0.0.1:3306)/short_url?parseTime=true&loc=UTC'
+go test -tags=integration ./internal/link
+```
+
 ## 目录
 
 ```text

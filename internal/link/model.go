@@ -39,39 +39,39 @@ type Domain struct {
 // Link 是可跳转的短链接
 type Link struct {
 	// ID 是 ULID 链接标识
-	ID string
+	ID string `db:"id"`
 	// WorkspaceID 是链接所属的 ULID 工作空间标识
-	WorkspaceID string
+	WorkspaceID string `db:"workspace_id"`
 	// DomainID 是链接所用 ULID 域名标识
-	DomainID string
+	DomainID string `db:"domain_id"`
 	// Slug 是大小写敏感的唯一短码
-	Slug string
+	Slug string `db:"slug"`
 	// DestinationURL 是规范化后的目标地址
-	DestinationURL string
+	DestinationURL string `db:"destination_url"`
 	// DestinationHash 是目标地址的 SHA-256 摘要
-	DestinationHash []byte
+	DestinationHash []byte `db:"destination_hash"`
 	// Title 是用户可编辑的链接标题
-	Title string
+	Title string `db:"title"`
 	// Notes 是用户可编辑的备注
-	Notes string
+	Notes string `db:"notes"`
 	// Status 是链接状态，有效值为 StatusActive 或 StatusDisabled
-	Status uint8
+	Status uint8 `db:"status"`
 	// RedirectCode 是 301 或 302
-	RedirectCode int
+	RedirectCode int `db:"redirect_code"`
 	// StartsAt 是可选生效时间的 UTC 值
-	StartsAt *time.Time
+	StartsAt *time.Time `db:"starts_at"`
 	// ExpiresAt 是可选过期时间的 UTC 值
-	ExpiresAt *time.Time
+	ExpiresAt *time.Time `db:"expires_at"`
 	// HumanClicks 是人类点击次数，后续由分析汇总维护
-	HumanClicks int64
+	HumanClicks int64 `db:"human_clicks"`
 	// Version 是链接元数据版本，写入缓存时用于识别变更
-	Version int
+	Version int `db:"version"`
 	// CreatedAt 是链接创建的 UTC 时间
-	CreatedAt time.Time
+	CreatedAt time.Time `db:"created_at"`
 	// UpdatedAt 是链接最近修改的 UTC 时间
-	UpdatedAt time.Time
+	UpdatedAt time.Time `db:"updated_at"`
 	// DeletedAt 是软删除的 UTC 时间，nil 表示未删除
-	DeletedAt *time.Time
+	DeletedAt *time.Time `db:"deleted_at"`
 }
 
 // CreateInput 是创建短链接所需的业务参数
