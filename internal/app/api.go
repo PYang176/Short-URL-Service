@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,7 +19,9 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/database"
+	"github.com/PYang176/Short-URL-Service/internal/platform/idempotency"
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
+	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
 	"github.com/PYang176/Short-URL-Service/internal/transport/httpapi"
 )
 
@@ -84,10 +87,13 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		return nil, fmt.Errorf("初始化默认短链域名失败: %w", err)
 	}
 	clickRecorder := analytics.NewRecorder(redisClient, logger, cfg.Analytics)
-	linkHandler := link.NewHandler(linkService, clickRecorder, logger)
+	idempotencyRepo := idempotency.NewMySQLRepository(db)
+	idempotencyService := idempotency.NewService(idempotencyRepo, cfg.Idempotency.TTL)
+	linkHandler := link.NewHandler(linkService, clickRecorder, idempotencyService, logger)
 	analyticsRepo := analytics.NewMySQLRepository(db)
 	analyticsService := analytics.NewService(analyticsRepo, linkRepo)
 	analyticsHandler := analytics.NewHandler(analyticsService, logger)
+	slidingWindowLimiter := ratelimit.New(redisClient)
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:     cfg,
@@ -100,15 +106,18 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		Domains:    domainHandler,
 		Analytics:  analyticsHandler,
 		Tokens:     tokenManager,
+		Limiter:    slidingWindowLimiter,
 		APIVersion: "v1",
 	})
 
 	server := &http.Server{
-		Addr:         cfg.HTTP.Addr,
-		Handler:      router,
-		ReadTimeout:  cfg.HTTP.ReadTimeout,
-		WriteTimeout: cfg.HTTP.WriteTimeout,
-		IdleTimeout:  cfg.HTTP.IdleTimeout,
+		Addr:              cfg.HTTP.Addr,
+		Handler:           router,
+		ReadTimeout:       cfg.HTTP.ReadTimeout,
+		WriteTimeout:      cfg.HTTP.WriteTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
+		ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes:    cfg.Security.MaxHeaderBytes,
 	}
 
 	return &API{

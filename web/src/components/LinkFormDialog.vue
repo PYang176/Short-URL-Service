@@ -19,6 +19,7 @@ const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 const pending = shallowRef(false)
 const errorMessage = shallowRef('')
 const domains = shallowRef<Domain[]>([])
+const idempotencyKey = shallowRef('')
 const form = reactive({
   destinationURL: '',
   domainID: '',
@@ -45,6 +46,7 @@ function resetForm(): void {
   form.status = link?.status ?? 1
   form.startsAt = toLocalDateTime(link?.starts_at ?? null)
   form.expiresAt = toLocalDateTime(link?.expires_at ?? null)
+  idempotencyKey.value = link ? '' : `web-${crypto.randomUUID()}`
   errorMessage.value = ''
 }
 
@@ -58,7 +60,7 @@ async function submit(): Promise<void> {
   try {
     const saved = props.link
       ? await updateLink(props.link.id, buildUpdateInput())
-      : await createLink(buildCreateInput())
+      : await createLink(buildCreateInput(), idempotencyKey.value)
     emit('saved', saved)
     emit('close')
   } catch (error) {

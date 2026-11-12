@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/link"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
+	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
 )
 
 // Dependencies 汇总构建 HTTP 路由所需的配置和处理器
@@ -38,6 +40,8 @@ type Dependencies struct {
 	Analytics *analytics.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
 	Tokens *identity.TokenManager
+	// Limiter 是共享 Redis 滑动窗口限流器
+	Limiter *ratelimit.Limiter
 	// APIVersion 是响应中展示的接口版本
 	APIVersion string
 }
@@ -54,7 +58,14 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	}
 
 	router := gin.New()
+	if err := router.SetTrustedProxies(deps.Config.Security.TrustedProxies); err != nil {
+		deps.Logger.Error("配置可信代理失败，禁用代理头解析", "error", err)
+		_ = router.SetTrustedProxies(nil)
+	}
+	binding.EnableDecoderDisallowUnknownFields = true
+	binding.EnableDecoderUseNumber = true
 	router.Use(
+		SecurityHeaders(),
 		RequestID(),
 		AccessLog(deps.Logger),
 		deps.Metrics.Middleware(),
@@ -66,6 +77,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(deps.Registry, promhttp.HandlerOpts{})))
 
 	api := router.Group("/api/v1")
+	api.Use(BodyLimit(deps.Config.Security.MaxBodyBytes), JSONContentType())
 	api.GET("/health", deps.Health.Live)
 	api.GET("/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -75,16 +87,41 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	})
 
 	auth := api.Group("/auth")
-	auth.POST("/register", deps.Identity.Register)
-	auth.POST("/login", deps.Identity.Login)
-	auth.POST("/refresh", deps.Identity.Refresh)
+	if deps.Config.RateLimit.Enabled {
+		auth.POST("/register",
+			RateLimitByIP(deps.Limiter, deps.Logger, "auth:register", deps.Config.RateLimit.Register),
+			deps.Identity.Register,
+		)
+		auth.POST("/login",
+			RateLimitByIP(deps.Limiter, deps.Logger, "auth:login", deps.Config.RateLimit.Login),
+			deps.Identity.Login,
+		)
+		auth.POST("/refresh",
+			RateLimitByIP(deps.Limiter, deps.Logger, "auth:refresh", deps.Config.RateLimit.Refresh),
+			deps.Identity.Refresh,
+		)
+	} else {
+		auth.POST("/register", deps.Identity.Register)
+		auth.POST("/login", deps.Identity.Login)
+		auth.POST("/refresh", deps.Identity.Refresh)
+	}
 	auth.POST("/logout", deps.Identity.Logout)
 
 	protected := api.Group("")
 	protected.Use(RequireAuth(deps.Tokens))
+	if deps.Config.RateLimit.Enabled {
+		protected.Use(RateLimitByWorkspace(deps.Limiter, deps.Logger, "api:default", deps.Config.RateLimit.API))
+	}
 	protected.GET("/me", deps.Identity.Profile)
 	protected.PATCH("/me", deps.Identity.UpdateProfile)
-	protected.POST("/links", deps.Links.Create)
+	if deps.Config.RateLimit.Enabled {
+		protected.POST("/links",
+			RateLimitByWorkspace(deps.Limiter, deps.Logger, "api:create-link", deps.Config.RateLimit.CreateLink),
+			deps.Links.Create,
+		)
+	} else {
+		protected.POST("/links", deps.Links.Create)
+	}
 	protected.GET("/links", deps.Links.List)
 	protected.GET("/links/:id", deps.Links.Get)
 	protected.PATCH("/links/:id", deps.Links.Update)
@@ -96,8 +133,14 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.POST("/domains/:id/verify", deps.Domains.Verify)
 	protected.DELETE("/domains/:id", deps.Domains.Delete)
 
-	router.GET("/r/:slug", deps.Links.Redirect)
-	router.GET("/:slug", deps.Links.RedirectByHost)
+	if deps.Config.RateLimit.Enabled {
+		redirectLimit := RateLimitByIP(deps.Limiter, deps.Logger, "redirect", deps.Config.RateLimit.Redirect)
+		router.GET("/r/:slug", redirectLimit, deps.Links.Redirect)
+		router.GET("/:slug", redirectLimit, deps.Links.RedirectByHost)
+	} else {
+		router.GET("/r/:slug", deps.Links.Redirect)
+		router.GET("/:slug", deps.Links.RedirectByHost)
+	}
 
 	router.NoRoute(func(c *gin.Context) {
 		requestID, _ := c.Get(requestIDKey)

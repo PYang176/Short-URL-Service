@@ -38,6 +38,12 @@ type Config struct {
 	Analytics AnalyticsConfig
 	// Domain 控制自定义域名验证
 	Domain DomainConfig
+	// RateLimit 控制统一 Redis 限流策略
+	RateLimit RateLimitConfig
+	// Security 控制请求体和代理边界
+	Security SecurityConfig
+	// Idempotency 控制幂等请求保存时间
+	Idempotency IdempotencyConfig
 }
 
 // HTTPConfig 控制 HTTP 服务端行为
@@ -116,6 +122,50 @@ type DomainConfig struct {
 	CNAME string
 }
 
+// RateLimitRule 是单个接口的限流规则
+type RateLimitRule struct {
+	// Limit 是窗口内允许的最大请求数
+	Limit int
+	// Window 是滑动窗口长度
+	Window time.Duration
+	// FailClosed 表示 Redis 故障时拒绝请求
+	FailClosed bool
+}
+
+// RateLimitConfig 汇总各接口限流规则
+type RateLimitConfig struct {
+	// Enabled 控制是否启用全局限流
+	Enabled bool
+	// Register 限制注册请求
+	Register RateLimitRule
+	// Login 限制登录请求
+	Login RateLimitRule
+	// Refresh 限制 Token 刷新
+	Refresh RateLimitRule
+	// API 限制普通受保护接口
+	API RateLimitRule
+	// CreateLink 限制创建短链
+	CreateLink RateLimitRule
+	// Redirect 限制公开跳转
+	Redirect RateLimitRule
+}
+
+// SecurityConfig 定义 HTTP 请求安全边界
+type SecurityConfig struct {
+	// MaxBodyBytes 是 API 请求体最大字节数
+	MaxBodyBytes int64
+	// MaxHeaderBytes 是 HTTP Header 最大字节数
+	MaxHeaderBytes int
+	// TrustedProxies 是允许提供客户端 IP 的代理 CIDR
+	TrustedProxies []string
+}
+
+// IdempotencyConfig 定义幂等键保存时间
+type IdempotencyConfig struct {
+	// TTL 是幂等结果保留时间
+	TTL time.Duration
+}
+
 // Load 从可选 .env 和环境变量读取配置并完成启动校验
 func Load() (Config, error) {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -166,6 +216,23 @@ func Load() (Config, error) {
 		Domain: DomainConfig{
 			VerifyMode: getEnv("DOMAIN_VERIFY_MODE", "mock"),
 			CNAME:      getEnv("CUSTOM_DOMAIN_CNAME", "links.localhost"),
+		},
+		RateLimit: RateLimitConfig{
+			Enabled:    getBool("RATE_LIMIT_ENABLED", true),
+			Register:   getRateLimitRule("RATE_LIMIT_REGISTER", 5, time.Hour, true),
+			Login:      getRateLimitRule("RATE_LIMIT_LOGIN", 10, 5*time.Minute, true),
+			Refresh:    getRateLimitRule("RATE_LIMIT_REFRESH", 30, time.Minute, true),
+			API:        getRateLimitRule("RATE_LIMIT_API", 120, time.Minute, false),
+			CreateLink: getRateLimitRule("RATE_LIMIT_CREATE_LINK", 30, time.Minute, false),
+			Redirect:   getRateLimitRule("RATE_LIMIT_REDIRECT", 600, time.Minute, false),
+		},
+		Security: SecurityConfig{
+			MaxBodyBytes:   int64(getInt("HTTP_MAX_BODY_BYTES", 64*1024)),
+			MaxHeaderBytes: getInt("HTTP_MAX_HEADER_BYTES", 16*1024),
+			TrustedProxies: getCSV("HTTP_TRUSTED_PROXIES", "127.0.0.1,::1"),
+		},
+		Idempotency: IdempotencyConfig{
+			TTL: getDuration("IDEMPOTENCY_TTL", 24*time.Hour),
 		},
 	}
 
@@ -221,6 +288,24 @@ func (c Config) Validate() error {
 	if c.Redis.PoolSize <= 0 || c.Redis.MinIdleConns < 0 {
 		return fmt.Errorf("redis 连接池参数无效")
 	}
+	if c.Security.MaxBodyBytes <= 0 || c.Security.MaxHeaderBytes <= 0 {
+		return fmt.Errorf("HTTP 请求安全限制必须大于零")
+	}
+	if c.Idempotency.TTL <= 0 {
+		return fmt.Errorf("IDEMPOTENCY_TTL 必须大于零")
+	}
+	for name, rule := range map[string]RateLimitRule{
+		"register":    c.RateLimit.Register,
+		"login":       c.RateLimit.Login,
+		"refresh":     c.RateLimit.Refresh,
+		"api":         c.RateLimit.API,
+		"create_link": c.RateLimit.CreateLink,
+		"redirect":    c.RateLimit.Redirect,
+	} {
+		if rule.Limit <= 0 || rule.Window <= 0 {
+			return fmt.Errorf("限流规则 %s 的参数无效", name)
+		}
+	}
 	return nil
 }
 
@@ -256,4 +341,39 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return parsed
+}
+
+// getBool 读取布尔环境变量，格式错误时回退默认值
+func getBool(key string, fallback bool) bool {
+	value, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+// getCSV 读取逗号分隔列表并去除空白
+func getCSV(key, fallback string) []string {
+	raw := getEnv(key, fallback)
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+// getRateLimitRule 从带前缀的环境变量读取限流规则
+func getRateLimitRule(prefix string, limit int, window time.Duration, failClosed bool) RateLimitRule {
+	return RateLimitRule{
+		Limit:      getInt(prefix+"_LIMIT", limit),
+		Window:     getDuration(prefix+"_WINDOW", window),
+		FailClosed: getBool(prefix+"_FAIL_CLOSED", failClosed),
+	}
 }

@@ -1,10 +1,14 @@
 package link
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,6 +21,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/PYang176/Short-URL-Service/internal/identity"
+	"github.com/PYang176/Short-URL-Service/internal/platform/idempotency"
 )
 
 // Handler 提供短链接管理和公开跳转 HTTP 接口
@@ -26,11 +31,23 @@ type Handler struct {
 	recorder ClickRecorder
 	// logger 记录点击写入失败等非致命错误
 	logger *slog.Logger
+	// idempotency 保存创建短链的首次响应
+	idempotency *idempotency.Service
 }
 
 // NewHandler 创建短链接 HTTP 处理器
-func NewHandler(service *Service, recorder ClickRecorder, logger *slog.Logger) *Handler {
-	return &Handler{service: service, recorder: recorder, logger: logger}
+func NewHandler(
+	service *Service,
+	recorder ClickRecorder,
+	idempotencyService *idempotency.Service,
+	logger *slog.Logger,
+) *Handler {
+	return &Handler{
+		service:     service,
+		recorder:    recorder,
+		idempotency: idempotencyService,
+		logger:      logger,
+	}
 }
 
 type createRequest struct {
@@ -166,21 +183,83 @@ func (h *Handler) QRCode(c *gin.Context) {
 
 // Create 创建当前工作空间下的短链接
 func (h *Handler) Create(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "读取请求体失败")
+		return
+	}
 	var request createRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := decodeJSON(body, &request); err != nil {
 		writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "创建短链请求参数无效")
 		return
 	}
-	link, err := h.service.Create(
+
+	workspaceID := c.GetString(identity.ContextWorkspaceID)
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	var requestHash []byte
+	if key != "" && h.idempotency != nil {
+		if !validIdempotencyKey(key) {
+			writeError(c, http.StatusBadRequest, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key 格式无效")
+			return
+		}
+		sum := sha256.Sum256(append([]byte("POST:/api/v1/links:"), body...))
+		requestHash = sum[:]
+		record, claimed, beginErr := h.idempotency.Begin(c.Request.Context(), workspaceID, key, requestHash)
+		if beginErr != nil {
+			switch {
+			case errors.Is(beginErr, idempotency.ErrRequestMismatch):
+				writeError(c, http.StatusConflict, "IDEMPOTENCY_MISMATCH", "幂等键已用于其他请求")
+			case errors.Is(beginErr, idempotency.ErrInProgress):
+				c.Header("Retry-After", "1")
+				writeError(c, http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "相同请求正在处理中")
+			default:
+				h.logger.Error("处理幂等键失败", "error", beginErr)
+				writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+			}
+			return
+		}
+		if !claimed {
+			if record.State != idempotency.StateCompleted ||
+				!record.StatusCode.Valid || !record.ResponseBody.Valid {
+				c.Header("Retry-After", "1")
+				writeError(c, http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "相同请求正在处理中")
+				return
+			}
+			c.Header("Idempotent-Replayed", "true")
+			c.Data(int(record.StatusCode.Int64), "application/json; charset=utf-8", []byte(record.ResponseBody.String))
+			return
+		}
+	}
+
+	link, createErr := h.service.Create(
 		c.Request.Context(),
-		c.GetString(identity.ContextWorkspaceID),
+		workspaceID,
 		CreateInput(request),
 	)
-	if err != nil {
-		writeLinkError(c, err)
+	if createErr != nil {
+		if key != "" && h.idempotency != nil {
+			if abortErr := h.idempotency.Abort(c.Request.Context(), workspaceID, key, requestHash); abortErr != nil {
+				h.logger.Warn("释放幂等键失败", "error", abortErr)
+			}
+		}
+		writeLinkError(c, createErr)
 		return
 	}
-	c.JSON(http.StatusCreated, h.toResponse(link))
+	responseBody, err := json.Marshal(h.toResponse(link))
+	if err != nil {
+		h.logger.Error("序列化创建短链响应失败", "error", err)
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	if key != "" && h.idempotency != nil {
+		if err := h.idempotency.Complete(
+			c.Request.Context(), workspaceID, key, requestHash,
+			http.StatusCreated, string(responseBody),
+		); err != nil {
+			h.logger.Error("保存幂等响应失败", "error", err)
+		}
+	}
+	c.Data(http.StatusCreated, "application/json; charset=utf-8", responseBody)
 }
 
 // List 返回当前工作空间的短链接列表
@@ -397,6 +476,31 @@ func qrSVG(code *qrcode.QRCode, size int) []byte {
 		size, size, modules, modules, path.String(),
 	)
 	return []byte(svg)
+}
+
+// decodeJSON 严格解析 JSON 并拒绝未知字段
+func decodeJSON(body []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
+}
+
+// validIdempotencyKey 校验客户端幂等键的字符和长度
+func validIdempotencyKey(value string) bool {
+	if len(value) < 8 || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		valid := character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z' ||
+			character >= '0' && character <= '9' ||
+			character == '-' || character == '_' ||
+			character == '.' || character == ':'
+		if !valid {
+			return false
+		}
+	}
+	return true
 }
 
 // writeLinkError 将短链领域错误映射为 HTTP 响应

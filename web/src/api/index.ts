@@ -72,9 +72,17 @@ export function getLink(id: string): Promise<Link> {
 }
 
 // createLink 创建短链接
-export function createLink(input: CreateLinkInput): Promise<Link> {
+export function createLink(
+  input: CreateLinkInput,
+  idempotencyKey = '',
+): Promise<Link> {
+  const headers: Record<string, string> = {}
+  if (idempotencyKey) {
+    headers['Idempotency-Key'] = idempotencyKey
+  }
   return requestJSON<Link>('/api/v1/links', {
     method: 'POST',
+    headers,
     body: JSON.stringify(input),
   })
 }
