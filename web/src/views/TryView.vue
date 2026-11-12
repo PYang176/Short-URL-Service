@@ -85,9 +85,15 @@ onMounted(loadTrialLinks)
 <template>
   <main class="trial-page">
     <section class="trial-story" aria-labelledby="trial-title">
-      <div class="trial-brand">
-        <span class="brand-mark" aria-hidden="true">SL</span>
-        <span>短链控制台</span>
+      <div class="trial-topbar">
+        <div class="trial-brand">
+          <span class="brand-mark" aria-hidden="true">SL</span>
+          <span>短链控制台</span>
+        </div>
+        <nav class="trial-session-actions" aria-label="账号选项">
+          <RouterLink class="trial-login-link" to="/login">登录</RouterLink>
+          <RouterLink class="trial-register-link" to="/register">注册</RouterLink>
+        </nav>
       </div>
 
       <div class="trial-copy">
@@ -255,6 +261,36 @@ onMounted(loadTrialLinks)
   align-items: center;
   gap: 0.75rem;
   font-weight: 700;
+}
+
+.trial-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.trial-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trial-login-link,
+.trial-register-link {
+  padding: 0.48rem 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-sm);
+  color: #eff8f6;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.trial-register-link {
+  border-color: #8fe3cf;
+  background: #8fe3cf;
+  color: var(--rail-deep);
 }
 
 .trial-copy {
@@ -463,6 +499,20 @@ onMounted(loadTrialLinks)
 }
 
 @media (max-width: 640px) {
+  .trial-topbar {
+    align-items: flex-start;
+  }
+
+  .trial-session-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .trial-login-link,
+  .trial-register-link {
+    text-align: center;
+  }
+
   .trial-workspace {
     padding: 1rem;
   }

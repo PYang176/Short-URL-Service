@@ -42,7 +42,8 @@ def main() -> None:
             else None,
         )
 
-        page.goto(f"{BASE_URL}/try")
+        page.goto(BASE_URL)
+        page.wait_for_url("**/try")
         page.wait_for_load_state("networkidle")
         page.get_by_label("目标地址").fill("https://example.com/trial")
         page.get_by_label("自定义短码，可选").fill(trial_alias)

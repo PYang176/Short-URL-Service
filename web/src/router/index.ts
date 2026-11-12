@@ -30,7 +30,8 @@ const router = createRouter({
       children: [
         {
           path: '',
-          redirect: '/dashboard',
+          redirect: () =>
+            useAuthStore().isAuthenticated ? { name: 'dashboard' } : { name: 'try' },
         },
         {
           path: 'dashboard',
