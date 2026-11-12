@@ -94,4 +94,3 @@ export default function (data) {
     "redirect returned 301/302": (result) => result.status === 301 || result.status === 302,
   });
 }
-
