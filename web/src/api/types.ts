@@ -100,6 +100,32 @@ export interface UpdateLinkInput {
   clear_expires_at?: boolean
 }
 
+// TrialCreateInput 是匿名游客创建短期短链的输入
+export interface TrialCreateInput {
+  destination_url: string
+  alias?: string
+  title?: string
+}
+
+// TrialLink 是游客会话创建的短期短链
+export interface TrialLink {
+  id: string
+  slug: string
+  short_url: string
+  destination_url: string
+  title: string
+  expires_at: string
+  created_at: string
+}
+
+// TrialLinksResponse 是游客当前会话的链接和剩余额度
+export interface TrialLinksResponse {
+  items: TrialLink[]
+  remaining: number
+  limit: number
+  expires_at: string | null
+}
+
 // SummaryMetrics 是链接分析核心指标
 export interface SummaryMetrics {
   total_clicks: number

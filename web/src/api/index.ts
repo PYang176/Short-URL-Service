@@ -8,6 +8,9 @@ import type {
   Link,
   LinkListResponse,
   ProfileResponse,
+  TrialCreateInput,
+  TrialLink,
+  TrialLinksResponse,
   UpdateLinkInput,
 } from './types'
 
@@ -142,4 +145,21 @@ export function getQRCode(id: string, format: 'png' | 'svg'): Promise<Blob> {
   return requestBlob(
     `/api/v1/links/${encodeURIComponent(id)}/qr?format=${format}&size=512`,
   )
+}
+
+// createTrialLink 在无需登录的游客会话中创建短期短链
+export function createTrialLink(input: TrialCreateInput): Promise<TrialLink> {
+  return requestJSON<TrialLink>(
+    '/api/v1/trial/links',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    false,
+  )
+}
+
+// listTrialLinks 获取当前浏览器游客会话的短期短链
+export function listTrialLinks(): Promise<TrialLinksResponse> {
+  return requestJSON<TrialLinksResponse>('/api/v1/trial/links', {}, false)
 }

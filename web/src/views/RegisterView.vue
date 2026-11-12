@@ -116,6 +116,9 @@ async function submit(): Promise<void> {
           已有账号？
           <RouterLink to="/login">返回登录</RouterLink>
         </p>
+        <p class="auth-switch">
+          <RouterLink to="/try">暂时不注册，先去试用</RouterLink>
+        </p>
       </form>
     </section>
   </main>

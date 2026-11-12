@@ -18,6 +18,12 @@ const router = createRouter({
       meta: { guestOnly: true, title: '注册' },
     },
     {
+      path: '/try',
+      name: 'try',
+      component: () => import('@/views/TryView.vue'),
+      meta: { guestOnly: true, title: '免登录试用' },
+    },
+    {
       path: '/',
       component: () => import('@/components/AppShell.vue'),
       meta: { requiresAuth: true },

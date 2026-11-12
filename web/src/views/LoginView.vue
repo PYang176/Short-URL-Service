@@ -97,6 +97,9 @@ async function submit(): Promise<void> {
           还没有账号？
           <RouterLink to="/register">创建账号</RouterLink>
         </p>
+        <p class="auth-switch">
+          <RouterLink to="/try">不登录，先创建一条试用短链</RouterLink>
+        </p>
       </form>
     </section>
   </main>
