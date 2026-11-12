@@ -7,6 +7,7 @@
 
 - 注册、登录、Refresh Token 轮换和重放检测。
 - 免登录游客试用，每个 HttpOnly Cookie 会话最多创建 3 条 24 小时短链。
+- 注册后自动认领游客链接和点击数据，并清除临时过期时间。
 - 用户工作空间与资源归属校验。
 - 短链接创建、游标分页、详情、编辑、停用和软删除。
 - 随机 Base62 短码、自定义别名和数据库唯一约束。
@@ -229,6 +230,7 @@ POST   /api/v1/auth/refresh
 
 POST   /api/v1/trial/links
 GET    /api/v1/trial/links
+POST   /api/v1/trial/claim
 
 POST   /api/v1/links
 GET    /api/v1/links
@@ -345,7 +347,6 @@ deploy               Docker Compose
 
 - 点击分析当前直接查询 MySQL 明细，尚未建立预聚合表。
 - 机器人标记基于手写 User-Agent 子串规则，不等于验证真人。
-- 游客短链暂不支持注册后自动认领，认领链路仍需后续实现。
 - 浏览器当前使用 `localStorage` 保存 Access Token 和 Refresh Token；CSP
   可降低脚本注入风险，但不能替代 HttpOnly Cookie 和 CSRF 防护。
 - 自定义域名生产环境尚未接 Caddy 自动证书。
