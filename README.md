@@ -1,79 +1,70 @@
 # Short URL Service
 
-一个面向高并发跳转和访问分析的短链接平台。项目采用模块化单体结构，提供 `api` 和 `worker` 两个独立运行角色，覆盖短链管理、自定义域名、动态二维码、点击分析和可视化报表。
-
-> 当前处于完整版开发阶段。认证、工作空间、短链 CRUD、默认域名跳转和 Redis 缓存已经完成，二维码、自定义域名和点击分析正在按路线逐步实现。
+基于 Go 和 Vue 3 的短链接管理平台，覆盖用户认证、短链创建与缓存跳转、
+动态二维码、自定义域名、Redis Streams 点击分析和可视化工作台。
 
 ## 已实现
 
-- Gin API 和 Worker 双入口。
-- 环境变量配置和启动校验。
-- 结构化 JSON 日志、请求 ID 和 Prometheus 指标。
-- MySQL、Redis 连接池。
-- 存活检查、就绪检查和优雅退出。
-- Goose 数据库迁移。
-- 用户注册、登录、退出。
-- Argon2id 密码摘要。
-- JWT Access Token。
-- 不透明 Refresh Token 和轮换重放检测。
-- 注册时原子创建用户、工作空间和 Owner 成员关系。
-- 当前用户资料查询和修改。
-- 短链接创建、列表、详情、修改、停用和软删除。
-- 随机 Base62 短码、自定义别名和短码唯一约束。
-- 目标 URL 规范化和安全校验。
-- Redis 跳转缓存、空值缓存、TTL 抖动和并发回源合并。
-- 修改或删除链接后的缓存主动失效。
-- `GET /r/{slug}` 默认域名公开跳转。
-- 跳转点击写入 Redis Streams。
-- Worker 批量、幂等写入 MySQL 点击明细。
-- 单链接总点击、独立访客、趋势、设备和浏览器分析。
-- 动态二维码 PNG/SVG 生成，二维码编码稳定短链并附带扫码来源参数。
-- 自定义域名添加、TXT/CNAME 说明、Mock/DNS 验证和 Host 跳转。
-- Docker Compose 管理 Redis、API、Worker 和迁移任务。
+- 注册、登录、Refresh Token 轮换和重放检测。
+- 用户工作空间与资源归属校验。
+- 短链接创建、游标分页、详情、编辑、停用和软删除。
+- 随机 Base62 短码、自定义别名和数据库唯一约束。
+- URL 规范化、严格 JSON、请求体大小限制和可信代理边界。
+- Redis 空值缓存、TTL 抖动、`singleflight` 和主动缓存失效。
+- Redis 滑动窗口限流，覆盖注册、登录、刷新、管理接口和公开跳转。
+- 创建短链 `Idempotency-Key`，相同请求可安全重放。
+- Redis Streams 点击事件、Consumer Group、ACK 和 Pending 接管。
+- MySQL 点击明细、趋势、独立访客、设备、系统、浏览器和来源分析。
+- 动态二维码 PNG/SVG，二维码指向稳定短链并标记扫码来源。
+- 自定义域名添加、TXT/CNAME 验证和 Host 跳转。
+- Vue 3 管理端、项目内 SVG 趋势图和 CSS 维度排行。
+- Docker Compose、Nginx、GitHub Actions 和 k6 压测报告。
 
 ## 技术栈
 
 | 层 | 技术 |
 | --- | --- |
-| API | Go、Gin、sqlx |
-| 事务数据库 | MySQL 8 |
+| API | Go 1.26、Gin、sqlx |
+| 数据 | MySQL 8，宿主机原生实例 |
 | 缓存与事件 | Redis 7、Redis Streams |
-| 分析存储 | MySQL 8 点击明细与预聚合表 |
-| 前端 | Vue 3、TypeScript、项目内 SVG/CSS 图表 |
-| 对象存储 | MinIO |
-| 反向代理 | Caddy |
-| 可观测性 | Prometheus、Grafana、`log/slog` |
+| 前端 | Vue 3、TypeScript、Pinia、Vue Router |
+| Web 服务 | Nginx |
+| 可观测性 | Prometheus 指标、`log/slog` |
+| 测试 | Go test、真实 MySQL 集成测试、Playwright、k6 |
+| CI | GitHub Actions |
 
 ## 架构
 
 ```text
-Vue Web
-   |
-Caddy
-   |
-cmd/api ---------------------- MySQL
-   |                             |
-   +---- Redis cache/rate limit  |
-   |                             |
-   +---- Redis Streams           |
-             |                   |
-          cmd/worker ------------+
+Browser
+  |
+Nginx :18088
+  |-- Vue 静态资源
+  |-- /api -> API
+  `-- /r   -> API
+
+cmd/api ----------------- MySQL（宿主机）
+   |                        |
+   +--- Redis cache         |
+   +--- Redis rate limit    |
+   +--- Redis Streams       |
+             |
+          cmd/worker -------+
 ```
 
-详细设计见：
-
-- [需求规格](docs/需求规格.md)
-- [架构设计](docs/架构设计.md)
-- [数据库设计](docs/数据库设计.md)
-- [数据库查询与索引设计](docs/数据库查询设计.md)
-- [开发路线](docs/开发路线.md)
-- [接口设计](docs/接口设计.md)
+API、Worker 和 Web 可以容器化。MySQL 不放入 Docker，避免本地数据库重复和
+数据卷迁移；Redis 使用 Docker。
 
 ## 快速启动
 
-需要 Docker Desktop，以及宿主机本地 MySQL 8。
+需要：
 
-先在本地 MySQL 创建数据库和专用账号：
+- Go 1.26
+- Node.js 24
+- Docker Desktop
+- 宿主机 MySQL 8
+
+### 1. 创建 MySQL 数据库
 
 ```sql
 CREATE DATABASE short_url
@@ -85,36 +76,38 @@ GRANT ALL PRIVILEGES ON short_url.* TO 'short_url'@'%';
 FLUSH PRIVILEGES;
 ```
 
-账号 Host 使用 `%` 是为了允许 Docker Desktop 容器通过
-`host.docker.internal` 访问宿主机 MySQL。实际使用时请设置强密码，并保证
-MySQL 只监听可信网络。
+### 2. 配置环境变量
 
 ```powershell
 Copy-Item deploy\.env.example deploy\.env
 notepad deploy\.env
-docker compose --env-file deploy\.env -f deploy\docker-compose.yml up -d --build
 ```
 
-`deploy\.env` 中的 `MYSQL_DSN` 必须指向自己的本地 MySQL。容器模式下默认使用：
+至少修改：
 
 ```text
-host.docker.internal:3306
+MYSQL_DSN
+JWT_SECRET
+ANALYTICS_HASH_SECRET
 ```
 
-默认地址：
+### 3. 构建并启动
+
+```powershell
+.\scripts\start.ps1
+```
+
+脚本会先构建 Vue，再启动 Redis、迁移、API、Worker 和 Nginx。
 
 | 服务 | 地址 |
 | --- | --- |
+| Web 控制台 | http://localhost:18088 |
 | API | http://localhost:18080 |
 | Worker 健康检查 | http://localhost:18081/health/live |
-| 存活检查 | http://localhost:18080/health/live |
-| 就绪检查 | http://localhost:18080/health/ready |
+| API 就绪检查 | http://localhost:18080/health/ready |
 | Prometheus 指标 | http://localhost:18080/metrics |
 
-MySQL 不放入 Docker，也不由 Compose 创建数据卷或端口映射。Redis、API 和
-Worker 在 Compose 中运行，迁移任务直接连接宿主机 MySQL。
-
-停止环境：
+停止：
 
 ```powershell
 docker compose --env-file deploy\.env -f deploy\docker-compose.yml down
@@ -122,159 +115,137 @@ docker compose --env-file deploy\.env -f deploy\docker-compose.yml down
 
 ## 本地开发
 
-先启动宿主机 MySQL 和 Redis，然后执行迁移：
-
 ```powershell
 Copy-Item .env.example .env
+docker compose -f deploy\docker-compose.yml up -d --pull never redis
 go run .\cmd\migrate up
+```
+
+终端 1：
+
+```powershell
 go run .\cmd\api
 ```
 
-另开终端启动 Worker：
+终端 2：
 
 ```powershell
 go run .\cmd\worker
 ```
 
-本地 API 默认监听 `:8080`。如果与已有服务冲突，修改 `.env` 中的 `HTTP_ADDR`。
-
-启动 Vue 管理端：
+终端 3：
 
 ```powershell
 Set-Location web
-npm install
 npm run dev
 ```
 
-前端地址为 `http://127.0.0.1:5173`，开发代理会转发 `/api` 和 `/r` 到本地 API。
-前后端联调时，API 的 `PUBLIC_BASE_URL` 需要设置为前端地址。
+前端开发地址为 `http://127.0.0.1:5173`。本地联调时，API 的
+`PUBLIC_BASE_URL` 应设置为该地址。
 
-## 认证接口
+## 演示数据
 
-### 注册
+API 启动后运行：
 
-```http
-POST /api/v1/auth/register
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "password123",
-  "display_name": "User"
-}
+```powershell
+.\scripts\seed-demo.ps1
 ```
 
-注册成功后返回用户、默认工作空间、Access Token 和 Refresh Token。
-
-### 登录
-
-```http
-POST /api/v1/auth/login
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
-
-### 刷新令牌
-
-```http
-POST /api/v1/auth/refresh
-Content-Type: application/json
-
-{
-  "refresh_token": "srt_..."
-}
-```
-
-Refresh Token 每次使用后都会轮换。旧 Token 再次使用会被判定为泄漏并撤销整个 Token Family。
-
-### 当前用户
-
-```http
-GET /api/v1/me
-Authorization: Bearer <access-token>
-```
-
-### 创建短链
-
-```http
-POST /api/v1/links
-Authorization: Bearer <access-token>
-Content-Type: application/json
-
-{
-  "destination_url": "https://example.com/landing",
-  "alias": "launch",
-  "title": "Launch page",
-  "redirect_code": 302
-}
-```
-
-创建成功后返回完整短链，例如：
+默认账号：
 
 ```text
-http://localhost:18080/r/launch
+demo@example.com
+demo12345
 ```
 
-### 链接管理
+脚本会幂等创建四个演示短链，并生成人类和 Googlebot 点击。
+
+## 安全与限流
+
+滑动窗口限流保存在 Redis：
+
+- 注册：默认 5 次/小时/IP，Redis 故障时拒绝。
+- 登录：默认 10 次/5 分钟/IP，Redis 故障时拒绝。
+- 刷新 Token：默认 30 次/分钟/IP，Redis 故障时拒绝。
+- 管理 API：默认 120 次/分钟/工作空间。
+- 创建短链：默认 30 次/分钟/工作空间。
+- 公开跳转：默认 600 次/分钟/IP。
+
+超限返回：
+
+```http
+429 Too Many Requests
+Retry-After: 60
+X-RateLimit-Limit: 600
+X-RateLimit-Remaining: 0
+```
+
+所有策略都可通过 `.env` 覆盖。
+
+创建短链接支持：
+
+```http
+Idempotency-Key: create-campaign-2026-11
+```
+
+相同工作空间、相同幂等键和相同请求体返回首次创建结果，并设置：
+
+```http
+Idempotent-Replayed: true
+```
+
+## 主要接口
 
 ```text
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+POST   /api/v1/auth/refresh
+
+POST   /api/v1/links
 GET    /api/v1/links
 GET    /api/v1/links/{id}
 PATCH  /api/v1/links/{id}
 DELETE /api/v1/links/{id}
-```
+GET    /api/v1/links/{id}/qr
+GET    /api/v1/links/{id}/analytics
 
-### 公开跳转
-
-```text
-GET /r/{slug}
-```
-
-### 点击分析
-
-```http
-GET /api/v1/links/{id}/analytics?days=30
-Authorization: Bearer <access-token>
-```
-
-返回总点击、人类点击、机器人点击、独立访客、趋势、国家、设备、
-操作系统、浏览器和来源分布。
-
-当前“机器人”是基于 User-Agent 子串规则的疑似标记，没有接入第三方识别包或
-外部识别服务。未命中规则的流量默认计为人类，因此该指标存在误判和漏判。
-
-### 二维码
-
-```http
-GET /api/v1/links/{id}/qr?format=png&size=512
-Authorization: Bearer <access-token>
-```
-
-`format` 支持 `png` 和 `svg`，`size` 有效范围为 128 至 1024。
-二维码编码 `/r/{slug}?utm_source=qr`，因此修改链接目标后二维码仍然有效，
-扫码访问也会进入点击分析。
-
-### 自定义域名
-
-```text
 GET    /api/v1/domains
 POST   /api/v1/domains
 POST   /api/v1/domains/{id}/verify
 DELETE /api/v1/domains/{id}
+
+GET /r/{slug}       默认域名
+GET /{slug}         自定义域名 Host
 ```
 
-本地 `DOMAIN_VERIFY_MODE=mock` 时可直接完成验证。通过已验证域名创建的短链
-可请求：
+默认 `GET /api/v1/links/{id}/qr` 返回 PNG，可用：
 
 ```text
-GET http://{custom-domain}/{slug}
+?format=svg&size=512
 ```
 
-本地可用 `Host` 请求头模拟自定义域名，不需要真实 DNS。
+## 自定义域名
+
+本地默认：
+
+```text
+DOMAIN_VERIFY_MODE=mock
+```
+
+开发环境添加域名后可直接验证。生产环境切换为 `dns`，系统检查：
+
+```text
+_shorturl.{hostname} TXT -> verification token
+{hostname} CNAME         -> CUSTOM_DOMAIN_CNAME
+```
+
+本地没有真实 DNS 时，可用 Host 请求头验证：
+
+```powershell
+curl.exe -I `
+  -H "Host: go.example.com" `
+  http://127.0.0.1:18080/alias
+```
 
 ## 质量检查
 
@@ -283,39 +254,68 @@ go test ./...
 go test -race ./...
 go vet ./...
 golangci-lint run ./...
+
+Set-Location web
+npm run typecheck
+npm run build
 ```
 
 真实 MySQL 集成测试：
 
 ```powershell
 $env:SHORTURL_TEST_MYSQL_DSN='user:password@tcp(127.0.0.1:3306)/short_url?parseTime=true&loc=UTC'
-go test -tags=integration ./internal/link
+go test -tags=integration ./...
 ```
+
+浏览器 E2E：
+
+```powershell
+python web\scripts\e2e.py
+```
+
+覆盖注册、域名验证、自定义域名短链、人类/机器人点击、分析、二维码下载、
+编辑链接和移动端布局。
+
+## 压测结果
+
+本机实测 500 req/s 目标，持续 20 秒：
+
+| 指标 | 结果 |
+| --- | --- |
+| 跳转次数 | 10,000 |
+| 实际速率 | 约 483 req/s |
+| 错误率 | 0% |
+| P95 | 3.55ms |
+| P99 | 4.99ms |
+
+详细环境、边界和原始 JSON：
+
+- [500 req/s 报告](loadtest/reports/redirect-500rps.md)
+- [k6 脚本](loadtest/redirect.js)
 
 ## 目录
 
 ```text
-cmd/
-  api/          HTTP API 和公开跳转入口
-  worker/       点击消费、域名验证和后台任务入口
-  migrate/      数据库迁移入口
-internal/
-  identity/     用户、工作空间和认证
-  link/         短链接、缓存、跳转和二维码
-  analytics/    Redis Streams、点击存储和分析查询
-  platform/     配置、MySQL、Redis、可观测性
-  transport/    HTTP 中间件与路由
-  app/          应用装配和生命周期
-migrations/     MySQL 版本化迁移
-deploy/         Docker Compose 和部署配置
-docs/           需求、架构、数据和开发文档
-web/            Vue 3 管理端与浏览器验收脚本
+cmd/api              HTTP API 与公开跳转
+cmd/worker           点击消费和后台任务
+cmd/migrate          数据库迁移
+internal/identity    用户、工作空间、认证
+internal/link        短链、缓存、跳转和二维码
+internal/domain      自定义域名
+internal/analytics   点击事件和分析
+internal/platform    配置、MySQL、Redis、限流、幂等
+internal/transport   HTTP 路由与中间件
+web                  Vue 3 管理端
+loadtest             k6 脚本与实测报告
+scripts              启动和演示数据脚本
+migrations           MySQL 迁移
+deploy               Docker Compose
 ```
 
 ## 当前边界
 
-- 自定义域名将使用 DNS Resolver 抽象，在没有真实域名时通过 Fake Resolver 和 Host 头完成本地验证。
-- 点击分析使用 Redis Streams 异步缓冲，当前直接查询 MySQL 点击明细；
-  在真实数据证明需要后再增加汇总表。
-- 当前只启用平台默认域名，自定义域名和二维码尚未接入。
-- 旧的实验实现已移除，历史代码仍可从初始 Git 提交恢复。
+- 点击分析当前直接查询 MySQL 明细，尚未建立预聚合表。
+- 机器人标记基于手写 User-Agent 子串规则，不等于验证真人。
+- 自定义域名生产环境尚未接 Caddy 自动证书。
+- 暂未实现文件夹、标签、API Key、Webhook、管理员治理和团队角色。
+- 自定义域名的管理入口仍由平台域名提供；自定义域名根路径由 API 处理。

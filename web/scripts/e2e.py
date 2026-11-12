@@ -12,10 +12,10 @@ from playwright.sync_api import sync_playwright
 
 BASE_URL = os.getenv("SHORTURL_WEB_URL", "http://127.0.0.1:5173")
 API_URL = os.getenv("SHORTURL_API_URL", "http://127.0.0.1:18080")
-CHROME_PATH = os.getenv(
-    "PLAYWRIGHT_CHROME_PATH",
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-)
+DEFAULT_WINDOWS_CHROME = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+CHROME_PATH = os.getenv("PLAYWRIGHT_CHROME_PATH")
+if not CHROME_PATH and DEFAULT_WINDOWS_CHROME.exists():
+    CHROME_PATH = str(DEFAULT_WINDOWS_CHROME)
 ARTIFACT_DIR = Path(__file__).resolve().parent.parent / ".tmp" / "playwright"
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -28,7 +28,10 @@ def main() -> None:
     console_errors: list[str] = []
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True, executable_path=CHROME_PATH)
+        launch_options = {"headless": True}
+        if CHROME_PATH:
+            launch_options["executable_path"] = CHROME_PATH
+        browser = playwright.chromium.launch(**launch_options)
         context = browser.new_context(viewport={"width": 1440, "height": 980})
         page = context.new_page()
         page.on(
