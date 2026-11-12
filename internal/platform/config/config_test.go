@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 // TestLoadDefaults 验证开发和本地启动所需的最小配置可以加载
@@ -91,5 +92,76 @@ func TestValidateRejectsMissingSecrets(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() error = nil, want missing secret error")
+	}
+}
+
+// TestValidateRejectsInvalidTrialConfig 验证游客有效期、清理周期和配额边界
+func TestValidateRejectsInvalidTrialConfig(t *testing.T) {
+	validRule := RateLimitRule{Limit: 1, Window: time.Minute}
+	base := Config{
+		Env:           EnvDevelopment,
+		PublicBaseURL: "http://localhost:8080",
+		HTTP:          HTTPConfig{Addr: ":8080"},
+		Auth:          AuthConfig{JWTSecret: "local-jwt-secret-0123456789abcdef"},
+		MySQL:         MySQLConfig{DSN: "dsn", MaxOpenConns: 1},
+		Redis:         RedisConfig{Addr: "localhost:6379", PoolSize: 1},
+		Analytics: AnalyticsConfig{
+			HashSecret:    "local-analytics-secret-0123456789abcdef",
+			ClickStream:   "clicks",
+			ConsumerGroup: "analytics",
+		},
+		Domain: DomainConfig{VerifyMode: "mock", CNAME: "links.localhost"},
+		RateLimit: RateLimitConfig{
+			Enabled:     true,
+			Register:    validRule,
+			Login:       validRule,
+			Refresh:     validRule,
+			API:         validRule,
+			CreateLink:  validRule,
+			Redirect:    validRule,
+			TrialCreate: validRule,
+		},
+		Security: SecurityConfig{MaxBodyBytes: 1024, MaxHeaderBytes: 1024},
+		Idempotency: IdempotencyConfig{
+			TTL: time.Hour,
+		},
+		Trial: TrialConfig{
+			SessionTTL:      time.Hour,
+			CleanupInterval: time.Minute,
+			MaxLinks:        3,
+		},
+	}
+
+	tests := []struct {
+		name  string
+		apply func(*Config)
+	}{
+		{
+			name: "session too short",
+			apply: func(cfg *Config) {
+				cfg.Trial.SessionTTL = time.Second
+			},
+		},
+		{
+			name: "cleanup too short",
+			apply: func(cfg *Config) {
+				cfg.Trial.CleanupInterval = time.Second
+			},
+		},
+		{
+			name: "link limit",
+			apply: func(cfg *Config) {
+				cfg.Trial.MaxLinks = 0
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := base
+			test.apply(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want invalid trial config error")
+			}
+		})
 	}
 }

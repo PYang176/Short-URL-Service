@@ -16,6 +16,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
+	"github.com/PYang176/Short-URL-Service/internal/trial"
 )
 
 // Dependencies 汇总构建 HTTP 路由所需的配置和处理器
@@ -38,6 +39,8 @@ type Dependencies struct {
 	Domains *domain.Handler
 	// Analytics 是点击分析接口处理器
 	Analytics *analytics.Handler
+	// Trial 是匿名游客试用接口处理器
+	Trial *trial.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
 	Tokens *identity.TokenManager
 	// Limiter 是共享 Redis 滑动窗口限流器
@@ -106,6 +109,29 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		auth.POST("/refresh", deps.Identity.Refresh)
 	}
 	auth.POST("/logout", deps.Identity.Logout)
+
+	trialAPI := api.Group("/trial")
+	if deps.Config.RateLimit.Enabled {
+		trialAPI.Use(RateLimitByIP(
+			deps.Limiter,
+			deps.Logger,
+			"trial:default",
+			deps.Config.RateLimit.API,
+		))
+		trialAPI.POST(
+			"/links",
+			RateLimitByIP(
+				deps.Limiter,
+				deps.Logger,
+				"trial:create",
+				deps.Config.RateLimit.TrialCreate,
+			),
+			deps.Trial.Create,
+		)
+	} else {
+		trialAPI.POST("/links", deps.Trial.Create)
+	}
+	trialAPI.GET("/links", deps.Trial.List)
 
 	protected := api.Group("")
 	protected.Use(RequireAuth(deps.Tokens))

@@ -44,6 +44,8 @@ type Config struct {
 	Security SecurityConfig
 	// Idempotency 控制幂等请求保存时间
 	Idempotency IdempotencyConfig
+	// Trial 控制匿名游客试用会话和链接额度
+	Trial TrialConfig
 }
 
 // HTTPConfig 控制 HTTP 服务端行为
@@ -148,6 +150,8 @@ type RateLimitConfig struct {
 	CreateLink RateLimitRule
 	// Redirect 限制公开跳转
 	Redirect RateLimitRule
+	// TrialCreate 限制匿名游客创建短链
+	TrialCreate RateLimitRule
 }
 
 // SecurityConfig 定义 HTTP 请求安全边界
@@ -164,6 +168,16 @@ type SecurityConfig struct {
 type IdempotencyConfig struct {
 	// TTL 是幂等结果保留时间
 	TTL time.Duration
+}
+
+// TrialConfig 定义匿名游客试用限制
+type TrialConfig struct {
+	// SessionTTL 是游客会话和临时链接的有效期
+	SessionTTL time.Duration
+	// CleanupInterval 是 Worker 清理过期游客数据的周期
+	CleanupInterval time.Duration
+	// MaxLinks 是单个游客会话允许创建的链接数量
+	MaxLinks int
 }
 
 // Load 从可选 .env 和环境变量读取配置并完成启动校验
@@ -222,6 +236,12 @@ func Load() (Config, error) {
 			API:        getRateLimitRule("RATE_LIMIT_API", 120, time.Minute, false),
 			CreateLink: getRateLimitRule("RATE_LIMIT_CREATE_LINK", 30, time.Minute, false),
 			Redirect:   getRateLimitRule("RATE_LIMIT_REDIRECT", 600, time.Minute, false),
+			TrialCreate: getRateLimitRule(
+				"RATE_LIMIT_TRIAL_CREATE",
+				10,
+				time.Hour,
+				true,
+			),
 		},
 		Security: SecurityConfig{
 			MaxBodyBytes:   int64(getInt("HTTP_MAX_BODY_BYTES", 64*1024)),
@@ -230,6 +250,11 @@ func Load() (Config, error) {
 		},
 		Idempotency: IdempotencyConfig{
 			TTL: getDuration("IDEMPOTENCY_TTL", 24*time.Hour),
+		},
+		Trial: TrialConfig{
+			SessionTTL:      getDuration("TRIAL_SESSION_TTL", 24*time.Hour),
+			CleanupInterval: getDuration("TRIAL_CLEANUP_INTERVAL", 10*time.Minute),
+			MaxLinks:        getInt("TRIAL_LINK_LIMIT", 3),
 		},
 	}
 
@@ -303,13 +328,23 @@ func (c Config) Validate() error {
 	if c.Idempotency.TTL <= 0 {
 		return fmt.Errorf("IDEMPOTENCY_TTL 必须大于零")
 	}
+	if c.Trial.SessionTTL < time.Minute || c.Trial.SessionTTL > 7*24*time.Hour {
+		return fmt.Errorf("TRIAL_SESSION_TTL 必须在 1 分钟至 7 天之间")
+	}
+	if c.Trial.CleanupInterval < time.Minute {
+		return fmt.Errorf("TRIAL_CLEANUP_INTERVAL 不能小于 1 分钟")
+	}
+	if c.Trial.MaxLinks < 1 || c.Trial.MaxLinks > 10 {
+		return fmt.Errorf("TRIAL_LINK_LIMIT 必须在 1 至 10 之间")
+	}
 	for name, rule := range map[string]RateLimitRule{
-		"register":    c.RateLimit.Register,
-		"login":       c.RateLimit.Login,
-		"refresh":     c.RateLimit.Refresh,
-		"api":         c.RateLimit.API,
-		"create_link": c.RateLimit.CreateLink,
-		"redirect":    c.RateLimit.Redirect,
+		"register":     c.RateLimit.Register,
+		"login":        c.RateLimit.Login,
+		"refresh":      c.RateLimit.Refresh,
+		"api":          c.RateLimit.API,
+		"create_link":  c.RateLimit.CreateLink,
+		"redirect":     c.RateLimit.Redirect,
+		"trial_create": c.RateLimit.TrialCreate,
 	} {
 		if rule.Limit <= 0 || rule.Window <= 0 {
 			return fmt.Errorf("限流规则 %s 的参数无效", name)

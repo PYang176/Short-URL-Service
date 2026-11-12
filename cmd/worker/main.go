@@ -17,6 +17,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/database"
+	"github.com/PYang176/Short-URL-Service/internal/trial"
 )
 
 // main 启动 Worker 进程并在失败时返回非零退出码
@@ -103,6 +104,12 @@ func run() error {
 	go func() {
 		workerErrCh <- clickWorker.Run(runCtx)
 	}()
+	trialCleaner := trial.NewCleaner(
+		trial.NewMySQLRepository(db),
+		logger,
+		cfg.Trial.CleanupInterval,
+	)
+	go trialCleaner.Run(runCtx)
 
 	errCh := make(chan error, 1)
 	go func() {

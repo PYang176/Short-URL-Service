@@ -23,6 +23,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
 	"github.com/PYang176/Short-URL-Service/internal/transport/httpapi"
+	trialpkg "github.com/PYang176/Short-URL-Service/internal/trial"
 )
 
 // API 持有 HTTP 服务及其数据库和 Redis 连接
@@ -94,6 +95,13 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 	analyticsService := analytics.NewService(analyticsRepo, linkRepo)
 	analyticsHandler := analytics.NewHandler(analyticsService, logger)
 	slidingWindowLimiter := ratelimit.New(redisClient)
+	trialRepo := trialpkg.NewMySQLRepository(db)
+	trialService := trialpkg.NewService(
+		trialRepo,
+		cfg.Trial.SessionTTL,
+		cfg.Trial.MaxLinks,
+	)
+	trialHandler := trialpkg.NewHandler(trialService, linkService, logger)
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:     cfg,
@@ -105,6 +113,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		Links:      linkHandler,
 		Domains:    domainHandler,
 		Analytics:  analyticsHandler,
+		Trial:      trialHandler,
 		Tokens:     tokenManager,
 		Limiter:    slidingWindowLimiter,
 		APIVersion: "v1",

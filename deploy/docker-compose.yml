@@ -47,6 +47,9 @@ services:
       HTTP_TRUSTED_PROXIES: ${HTTP_TRUSTED_PROXIES:-127.0.0.1,::1,172.16.0.0/12}
       MYSQL_DSN: "${MYSQL_DSN:?set MYSQL_DSN in deploy/.env}"
       REDIS_ADDR: "redis:6379"
+      TRIAL_SESSION_TTL: ${TRIAL_SESSION_TTL:-24h}
+      TRIAL_LINK_LIMIT: ${TRIAL_LINK_LIMIT:-3}
+      TRIAL_CLEANUP_INTERVAL: ${TRIAL_CLEANUP_INTERVAL:-10m}
     ports:
       - "${API_PORT:-18080}:8080"
     depends_on:
@@ -77,6 +80,9 @@ services:
       HTTP_TRUSTED_PROXIES: ${HTTP_TRUSTED_PROXIES:-127.0.0.1,::1,172.16.0.0/12}
       MYSQL_DSN: "${MYSQL_DSN:?set MYSQL_DSN in deploy/.env}"
       REDIS_ADDR: "redis:6379"
+      TRIAL_SESSION_TTL: ${TRIAL_SESSION_TTL:-24h}
+      TRIAL_LINK_LIMIT: ${TRIAL_LINK_LIMIT:-3}
+      TRIAL_CLEANUP_INTERVAL: ${TRIAL_CLEANUP_INTERVAL:-10m}
     ports:
       - "${WORKER_PORT:-18081}:8081"
     depends_on:
