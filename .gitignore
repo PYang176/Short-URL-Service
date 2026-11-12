@@ -1,7 +1,13 @@
 # .gitignore
 config.json
 .env
+.env.*
+!.env.example
 deploy/.env
+*.pem
+*.key
+*.p12
+*.pfx
 
 # 编译产物
 *.exe

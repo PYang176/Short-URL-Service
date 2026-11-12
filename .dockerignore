@@ -2,7 +2,12 @@
 .idea
 .vscode
 .env
+.env.*
 config.json
+*.pem
+*.key
+*.p12
+*.pfx
 tmp
 coverage.out
 *.exe

@@ -184,16 +184,13 @@ func Load() (Config, error) {
 			ShutdownTimeout: getDuration("HTTP_SHUTDOWN_TIMEOUT", 10*time.Second),
 		},
 		Auth: AuthConfig{
-			JWTSecret:        getEnv("JWT_SECRET", "dev-only-secret-change-before-production-123456"),
+			JWTSecret:        getEnv("JWT_SECRET", ""),
 			AccessTokenTTL:   getDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 			RefreshTokenTTL:  getDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour),
 			PasswordResetTTL: getDuration("PASSWORD_RESET_TTL", 30*time.Minute),
 		},
 		MySQL: MySQLConfig{
-			DSN: getEnv(
-				"MYSQL_DSN",
-				"root:password@tcp(127.0.0.1:3306)/short_url?parseTime=true&loc=UTC&charset=utf8mb4&collation=utf8mb4_unicode_ci",
-			),
+			DSN:             getEnv("MYSQL_DSN", ""),
 			MaxOpenConns:    getInt("MYSQL_MAX_OPEN_CONNS", 50),
 			MaxIdleConns:    getInt("MYSQL_MAX_IDLE_CONNS", 10),
 			ConnMaxLifetime: getDuration("MYSQL_CONN_MAX_LIFETIME", time.Hour),
@@ -209,7 +206,7 @@ func Load() (Config, error) {
 			WriteTimeout: getDuration("REDIS_WRITE_TIMEOUT", 2*time.Second),
 		},
 		Analytics: AnalyticsConfig{
-			HashSecret:    getEnv("ANALYTICS_HASH_SECRET", "dev-only-analytics-secret-change-in-production"),
+			HashSecret:    getEnv("ANALYTICS_HASH_SECRET", ""),
 			ClickStream:   getEnv("CLICK_STREAM", "shorturl:clicks"),
 			ConsumerGroup: getEnv("CLICK_CONSUMER_GROUP", "shorturl-analytics"),
 		},
@@ -266,11 +263,23 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.Redis.Addr) == "" {
 		return fmt.Errorf("REDIS_ADDR 不能为空")
 	}
-	if c.Env == EnvProduction && len(c.Auth.JWTSecret) < 32 {
-		return fmt.Errorf("生产环境 JWT_SECRET 至少需要 32 字节")
+	if strings.TrimSpace(c.Auth.JWTSecret) == "" {
+		return fmt.Errorf("JWT_SECRET 不能为空")
 	}
-	if c.Env == EnvProduction && len(c.Analytics.HashSecret) < 32 {
-		return fmt.Errorf("生产环境 ANALYTICS_HASH_SECRET 至少需要 32 字节")
+	if strings.TrimSpace(c.Analytics.HashSecret) == "" {
+		return fmt.Errorf("ANALYTICS_HASH_SECRET 不能为空")
+	}
+	if isPlaceholderSecret(c.Auth.JWTSecret) {
+		return fmt.Errorf("JWT_SECRET 不能使用示例值")
+	}
+	if isPlaceholderSecret(c.Analytics.HashSecret) {
+		return fmt.Errorf("ANALYTICS_HASH_SECRET 不能使用示例值")
+	}
+	if c.Env == EnvProduction && !isStrongSecret(c.Auth.JWTSecret) {
+		return fmt.Errorf("生产环境 JWT_SECRET 至少需要 32 字节且不能使用示例值")
+	}
+	if c.Env == EnvProduction && !isStrongSecret(c.Analytics.HashSecret) {
+		return fmt.Errorf("生产环境 ANALYTICS_HASH_SECRET 至少需要 32 字节且不能使用示例值")
 	}
 	if strings.TrimSpace(c.Analytics.ClickStream) == "" ||
 		strings.TrimSpace(c.Analytics.ConsumerGroup) == "" {
@@ -315,6 +324,23 @@ func getEnv(key, fallback string) string {
 		return strings.TrimSpace(value)
 	}
 	return fallback
+}
+
+// isStrongSecret 检查生产密钥长度并拒绝仓库中的示例占位值
+func isStrongSecret(secret string) bool {
+	value := strings.ToLower(strings.TrimSpace(secret))
+	if len(value) < 32 {
+		return false
+	}
+	return !isPlaceholderSecret(value) && !strings.HasPrefix(value, "test-")
+}
+
+// isPlaceholderSecret 检查配置模板中的固定占位值
+func isPlaceholderSecret(secret string) bool {
+	value := strings.ToLower(strings.TrimSpace(secret))
+	return strings.HasPrefix(value, "replace-with") ||
+		strings.HasPrefix(value, "change-me") ||
+		strings.HasPrefix(value, "dev-only-")
 }
 
 // getInt 读取整数环境变量，格式错误时回退默认值
