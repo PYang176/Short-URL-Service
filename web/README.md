@@ -37,6 +37,8 @@ python scripts\e2e.py
 
 - 注册与自动登录。
 - 创建短链接。
+- 添加并模拟验证自定义域名。
+- 使用自定义域名创建短链并通过 Host 请求跳转。
 - 人类与机器人 User-Agent 请求。
 - Redis Streams、Worker 和 MySQL 点击汇总。
 - 分析页读取。

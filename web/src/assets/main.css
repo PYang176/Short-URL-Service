@@ -398,6 +398,110 @@ h3 {
   gap: 1rem;
 }
 
+.domain-add-panel {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.7fr) minmax(18rem, 1fr);
+  align-items: end;
+  gap: 1.2rem;
+}
+
+.domain-add-panel > div > p {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.domain-add-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.7rem;
+}
+
+.domain-mode-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.domain-list {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.domain-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.domain-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.domain-identity h3 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}
+
+.domain-identity p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.domain-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dns-instructions {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.dns-instructions summary {
+  padding: 0.8rem 0;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.dns-instructions dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.dns-instructions dl > div {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: 0.8rem;
+  font-size: 0.78rem;
+}
+
+.dns-instructions dt {
+  color: var(--muted);
+}
+
+.dns-instructions dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.dns-instructions code {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
 .section-heading-row p,
 .page-header p,
 .detail-header p {
@@ -1307,8 +1411,16 @@ h3 {
     padding-top: 1.4rem;
   }
 
+  .domain-add-panel {
+    grid-template-columns: 1fr;
+  }
+
   .link-row {
     grid-template-columns: 4rem minmax(0, 1fr) auto;
+  }
+
+  .domain-add-panel {
+    grid-template-columns: 1fr;
   }
 
   .link-code,
@@ -1412,6 +1524,24 @@ h3 {
   .toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .domain-add-form,
+  .domain-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .domain-actions {
+    flex-wrap: wrap;
+  }
+
+  .domain-add-form,
+  .domain-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .domain-actions {
+    justify-content: flex-start;
   }
 
   .link-row {

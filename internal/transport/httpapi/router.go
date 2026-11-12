@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/PYang176/Short-URL-Service/internal/analytics"
+	"github.com/PYang176/Short-URL-Service/internal/domain"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
@@ -31,6 +32,8 @@ type Dependencies struct {
 	Identity *identity.Handler
 	// Links 是短链管理和公开跳转接口处理器
 	Links *link.Handler
+	// Domains 是自定义域名接口处理器
+	Domains *domain.Handler
 	// Analytics 是点击分析接口处理器
 	Analytics *analytics.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
@@ -88,8 +91,13 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.DELETE("/links/:id", deps.Links.Delete)
 	protected.GET("/links/:id/qr", deps.Links.QRCode)
 	protected.GET("/links/:id/analytics", deps.Analytics.Overview)
+	protected.GET("/domains", deps.Domains.List)
+	protected.POST("/domains", deps.Domains.Add)
+	protected.POST("/domains/:id/verify", deps.Domains.Verify)
+	protected.DELETE("/domains/:id", deps.Domains.Delete)
 
 	router.GET("/r/:slug", deps.Links.Redirect)
+	router.GET("/:slug", deps.Links.RedirectByHost)
 
 	router.NoRoute(func(c *gin.Context) {
 		requestID, _ := c.Get(requestIDKey)

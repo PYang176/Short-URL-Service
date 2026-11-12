@@ -39,14 +39,30 @@ type Service struct {
 	baseURL *url.URL
 	// defaultDomain 是当前平台默认域名
 	defaultDomain *Domain
+	// domains 校验自定义域名归属和 Host 路由
+	domains DomainAuthorizer
 	// cacheGroup 合并同一短码的并发回源
 	cacheGroup singleflight.Group
 	// now 提供可替换的 UTC 时间
 	now func() time.Time
 }
 
+// DomainAuthorizer 定义短链接服务需要的域名能力
+type DomainAuthorizer interface {
+	// AuthorizeLinkDomain 校验工作空间域名归属和验证状态
+	AuthorizeLinkDomain(ctx context.Context, workspaceID, domainID string) (string, error)
+	// ResolveVerifiedHost 返回已验证 Host 的域名 ID
+	ResolveVerifiedHost(ctx context.Context, hostname string) (string, error)
+}
+
 // NewService 创建短链接服务
-func NewService(repo Repository, redisClient *redis.Client, logger *slog.Logger, publicBaseURL string) (*Service, error) {
+func NewService(
+	repo Repository,
+	redisClient *redis.Client,
+	logger *slog.Logger,
+	publicBaseURL string,
+	domains DomainAuthorizer,
+) (*Service, error) {
 	baseURL, err := url.Parse(publicBaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("解析公开短链根地址失败: %w", err)
@@ -56,6 +72,7 @@ func NewService(repo Repository, redisClient *redis.Client, logger *slog.Logger,
 		redis:   redisClient,
 		logger:  logger,
 		baseURL: baseURL,
+		domains: domains,
 		now:     func() time.Time { return time.Now().UTC() },
 	}, nil
 }
@@ -116,11 +133,26 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateIn
 			}
 		}
 
+		domainID := s.defaultDomain.ID
+		domainHostname := s.defaultDomain.Hostname
+		if input.DomainID != "" && input.DomainID != s.defaultDomain.ID {
+			if s.domains == nil {
+				return nil, fmt.Errorf("%w: 自定义域名不可用", ErrInvalidInput)
+			}
+			authorizedHost, err := s.domains.AuthorizeLinkDomain(ctx, workspaceID, input.DomainID)
+			if err != nil {
+				return nil, fmt.Errorf("%w: 自定义域名未验证", ErrInvalidInput)
+			}
+			domainID = input.DomainID
+			domainHostname = authorizedHost
+		}
+
 		now := s.now()
 		candidate := &Link{
 			ID:              newID(),
 			WorkspaceID:     workspaceID,
-			DomainID:        s.defaultDomain.ID,
+			DomainID:        domainID,
+			DomainHostname:  domainHostname,
 			Slug:            slug,
 			DestinationURL:  destination,
 			DestinationHash: destinationHash[:],
@@ -247,7 +279,24 @@ func (s *Service) Resolve(ctx context.Context, slug string) (ResolveResult, erro
 	if s.defaultDomain == nil {
 		return ResolveResult{}, fmt.Errorf("默认域名尚未初始化")
 	}
-	cacheKey := linkCacheKey(s.defaultDomain.ID, slug)
+	return s.resolveDomain(ctx, s.defaultDomain.ID, slug)
+}
+
+// ResolveByHost 使用已验证自定义 Host 解析短码
+func (s *Service) ResolveByHost(ctx context.Context, hostname, slug string) (ResolveResult, error) {
+	if s.domains == nil {
+		return ResolveResult{}, ErrNotFound
+	}
+	domainID, err := s.domains.ResolveVerifiedHost(ctx, hostname)
+	if err != nil {
+		return ResolveResult{}, ErrNotFound
+	}
+	return s.resolveDomain(ctx, domainID, slug)
+}
+
+// resolveDomain 解析指定域名下的短码
+func (s *Service) resolveDomain(ctx context.Context, domainID, slug string) (ResolveResult, error) {
+	cacheKey := linkCacheKey(domainID, slug)
 
 	if cached, found, err := s.readCache(ctx, cacheKey); err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -255,7 +304,7 @@ func (s *Service) Resolve(ctx context.Context, slug string) (ResolveResult, erro
 		}
 		s.logger.Warn("读取链接缓存失败，回源 MySQL", "error", err)
 	} else if found {
-		return s.toResolveResult(cached, slug)
+		return s.toResolveResult(cached, domainID, slug)
 	}
 
 	value, err, _ := s.cacheGroup.Do(cacheKey, func() (any, error) {
@@ -265,7 +314,7 @@ func (s *Service) Resolve(ctx context.Context, slug string) (ResolveResult, erro
 			return nil, ErrNotFound
 		}
 
-		link, findErr := s.repo.FindByDomainSlug(ctx, s.defaultDomain.ID, slug)
+		link, findErr := s.repo.FindByDomainSlug(ctx, domainID, slug)
 		if errors.Is(findErr, ErrNotFound) {
 			s.setNullCache(ctx, cacheKey)
 			return nil, ErrNotFound
@@ -285,20 +334,25 @@ func (s *Service) Resolve(ctx context.Context, slug string) (ResolveResult, erro
 	if !ok {
 		return ResolveResult{}, fmt.Errorf("链接缓存类型无效")
 	}
-	return s.toResolveResult(cached, slug)
+	return s.toResolveResult(cached, domainID, slug)
 }
 
 // ShortURL 返回默认域名下的完整短链地址
 func (s *Service) ShortURL(link *Link) string {
 	target := *s.baseURL
-	target.Path = strings.TrimRight(target.Path, "/") + "/r/" + link.Slug
+	if link.DomainHostname != "" && link.DomainHostname != s.defaultDomain.Hostname {
+		target.Host = link.DomainHostname
+		target.Path = "/" + link.Slug
+	} else {
+		target.Path = strings.TrimRight(target.Path, "/") + "/r/" + link.Slug
+	}
 	target.RawQuery = ""
 	target.Fragment = ""
 	return target.String()
 }
 
 // toResolveResult 根据时间窗口和状态生成可跳转元数据
-func (s *Service) toResolveResult(cached *CachedLink, slug string) (ResolveResult, error) {
+func (s *Service) toResolveResult(cached *CachedLink, domainID, slug string) (ResolveResult, error) {
 	now := s.now()
 	if cached.Status != StatusActive {
 		return ResolveResult{}, ErrGone
@@ -312,7 +366,7 @@ func (s *Service) toResolveResult(cached *CachedLink, slug string) (ResolveResul
 	return ResolveResult{
 		LinkID:         cached.ID,
 		WorkspaceID:    cached.WorkspaceID,
-		DomainID:       s.defaultDomain.ID,
+		DomainID:       domainID,
 		Slug:           slug,
 		DestinationURL: cached.DestinationURL,
 		RedirectCode:   cached.RedirectCode,

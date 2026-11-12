@@ -124,6 +124,36 @@ func TestServiceResolveLinkWindow(t *testing.T) {
 	}
 }
 
+// TestServiceCustomDomain 验证自定义域名创建、返回地址和 Host 跳转
+func TestServiceCustomDomain(t *testing.T) {
+	service, _, cleanup := testService(t)
+	defer cleanup()
+	service.domains = fakeDomainAuthorizer{}
+
+	created, err := service.Create(context.Background(), "workspace-1", CreateInput{
+		DestinationURL: "https://example.com/custom",
+		Alias:          "custom",
+		DomainID:       "domain-custom",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.DomainHostname != "go.example.com" {
+		t.Fatalf("DomainHostname = %q", created.DomainHostname)
+	}
+	if shortURL := service.ShortURL(created); shortURL != "http://go.example.com/custom" {
+		t.Fatalf("ShortURL() = %q", shortURL)
+	}
+
+	resolved, err := service.ResolveByHost(context.Background(), "go.example.com", "custom")
+	if err != nil {
+		t.Fatalf("ResolveByHost() error = %v", err)
+	}
+	if resolved.DomainID != "domain-custom" || resolved.DestinationURL != "https://example.com/custom" {
+		t.Fatalf("ResolveByHost() = %+v", resolved)
+	}
+}
+
 // testService 创建使用内存仓库和 miniredis 的短链接服务
 func testService(t *testing.T) (*Service, *fakeRepository, func()) {
 	t.Helper()
@@ -131,7 +161,7 @@ func testService(t *testing.T) (*Service, *fakeRepository, func()) {
 	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
 	repo := newFakeRepository()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	service, err := NewService(repo, redisClient, logger, "http://localhost:8080")
+	service, err := NewService(repo, redisClient, logger, "http://localhost:8080", nil)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -288,4 +318,16 @@ func cloneLink(link *Link) *Link {
 		copy.DeletedAt = &value
 	}
 	return &copy
+}
+
+type fakeDomainAuthorizer struct{}
+
+// AuthorizeLinkDomain 返回固定已验证自定义域名
+func (fakeDomainAuthorizer) AuthorizeLinkDomain(context.Context, string, string) (string, error) {
+	return "go.example.com", nil
+}
+
+// ResolveVerifiedHost 返回固定自定义域名 ID
+func (fakeDomainAuthorizer) ResolveVerifiedHost(context.Context, string) (string, error) {
+	return "domain-custom", nil
 }

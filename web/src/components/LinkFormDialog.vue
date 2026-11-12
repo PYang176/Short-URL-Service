@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { reactive, shallowRef, useTemplateRef, watch } from 'vue'
 
-import { createLink, updateLink } from '@/api'
+import { createLink, listDomains, updateLink } from '@/api'
 import { ApiError } from '@/api/http'
-import type { CreateLinkInput, Link, UpdateLinkInput } from '@/api/types'
+import type { CreateLinkInput, Domain, Link, UpdateLinkInput } from '@/api/types'
 
 const props = defineProps<{
   open: boolean
@@ -18,8 +18,10 @@ const emit = defineEmits<{
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
 const pending = shallowRef(false)
 const errorMessage = shallowRef('')
+const domains = shallowRef<Domain[]>([])
 const form = reactive({
   destinationURL: '',
+  domainID: '',
   alias: '',
   title: '',
   notes: '',
@@ -35,6 +37,7 @@ const editing = () => Boolean(props.link)
 function resetForm(): void {
   const link = props.link
   form.destinationURL = link?.destination_url ?? ''
+  form.domainID = link?.domain_id ?? ''
   form.alias = link?.slug ?? ''
   form.title = link?.title ?? ''
   form.notes = link?.notes ?? ''
@@ -70,6 +73,7 @@ async function submit(): Promise<void> {
 function buildCreateInput(): CreateLinkInput {
   return {
     destination_url: form.destinationURL.trim(),
+    domain_id: form.domainID || undefined,
     alias: form.alias.trim() || undefined,
     title: form.title.trim(),
     notes: form.notes.trim(),
@@ -119,6 +123,7 @@ watch(
   (open) => {
     if (open) {
       resetForm()
+      void loadVerifiedDomains()
       if (!dialog.value?.open) {
         dialog.value?.showModal()
       }
@@ -128,6 +133,16 @@ watch(
   },
   { immediate: true },
 )
+
+// loadVerifiedDomains 加载可用于创建短链的已验证域名
+async function loadVerifiedDomains(): Promise<void> {
+  try {
+    const result = await listDomains()
+    domains.value = result.items.filter((domain) => domain.verified)
+  } catch {
+    domains.value = []
+  }
+}
 </script>
 
 <template>
@@ -180,6 +195,21 @@ watch(
             pattern="[A-Za-z0-9_\-]{4,32}"
             placeholder="留空自动生成"
           />
+        </label>
+
+        <label v-if="!editing()" class="field">
+          <span>域名</span>
+          <select v-model="form.domainID">
+            <option value="">平台默认域名</option>
+            <option v-for="domain in domains" :key="domain.id" :value="domain.id">
+              {{ domain.hostname }}
+            </option>
+          </select>
+        </label>
+
+        <label v-else class="field">
+          <span>域名</span>
+          <input :value="props.link?.domain_hostname" readonly />
         </label>
 
         <label class="field">

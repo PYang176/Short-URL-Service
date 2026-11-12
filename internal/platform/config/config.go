@@ -36,6 +36,8 @@ type Config struct {
 	Redis RedisConfig
 	// Analytics 控制点击事件队列和访客匿名化
 	Analytics AnalyticsConfig
+	// Domain 控制自定义域名验证
+	Domain DomainConfig
 }
 
 // HTTPConfig 控制 HTTP 服务端行为
@@ -106,6 +108,14 @@ type AnalyticsConfig struct {
 	ConsumerGroup string
 }
 
+// DomainConfig 定义自定义域名验证参数
+type DomainConfig struct {
+	// VerifyMode 是验证模式，有效值为 mock 或 dns
+	VerifyMode string
+	// CNAME 是用户域名需要指向的平台接入域名
+	CNAME string
+}
+
 // Load 从可选 .env 和环境变量读取配置并完成启动校验
 func Load() (Config, error) {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -153,6 +163,10 @@ func Load() (Config, error) {
 			ClickStream:   getEnv("CLICK_STREAM", "shorturl:clicks"),
 			ConsumerGroup: getEnv("CLICK_CONSUMER_GROUP", "shorturl-analytics"),
 		},
+		Domain: DomainConfig{
+			VerifyMode: getEnv("DOMAIN_VERIFY_MODE", "mock"),
+			CNAME:      getEnv("CUSTOM_DOMAIN_CNAME", "links.localhost"),
+		},
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -194,6 +208,12 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.Analytics.ClickStream) == "" ||
 		strings.TrimSpace(c.Analytics.ConsumerGroup) == "" {
 		return fmt.Errorf("点击事件 Stream 和消费者组不能为空")
+	}
+	if c.Domain.VerifyMode != "mock" && c.Domain.VerifyMode != "dns" {
+		return fmt.Errorf("DOMAIN_VERIFY_MODE 必须是 mock 或 dns")
+	}
+	if strings.TrimSpace(c.Domain.CNAME) == "" {
+		return fmt.Errorf("CUSTOM_DOMAIN_CNAME 不能为空")
 	}
 	if c.MySQL.MaxOpenConns <= 0 || c.MySQL.MaxIdleConns < 0 {
 		return fmt.Errorf("MySQL 连接池参数无效")

@@ -44,6 +44,12 @@ const router = createRouter({
           component: () => import('@/views/LinkDetailView.vue'),
           meta: { requiresAuth: true, title: '链接详情' },
         },
+        {
+          path: 'domains',
+          name: 'domains',
+          component: () => import('@/views/DomainsView.vue'),
+          meta: { requiresAuth: true, title: '自定义域名' },
+        },
       ],
     },
     {

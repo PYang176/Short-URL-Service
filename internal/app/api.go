@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/PYang176/Short-URL-Service/internal/analytics"
+	domainpkg "github.com/PYang176/Short-URL-Service/internal/domain"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
 	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
@@ -60,8 +61,22 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		cfg.Auth.RefreshTokenTTL,
 	)
 	identityHandler := identity.NewHandler(identityService)
+	domainRepo := domainpkg.NewMySQLRepository(db)
+	domainService := domainpkg.NewService(
+		domainRepo,
+		domainpkg.DNSResolver{},
+		cfg.Domain.VerifyMode,
+		cfg.Domain.CNAME,
+	)
+	domainHandler := domainpkg.NewHandler(domainService)
 	linkRepo := link.NewMySQLRepository(db)
-	linkService, err := link.NewService(linkRepo, redisClient, logger, cfg.PublicBaseURL)
+	linkService, err := link.NewService(
+		linkRepo,
+		redisClient,
+		logger,
+		cfg.PublicBaseURL,
+		domainService,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("初始化短链接服务失败: %w", err)
 	}
@@ -82,6 +97,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		Metrics:    metrics,
 		Identity:   identityHandler,
 		Links:      linkHandler,
+		Domains:    domainHandler,
 		Analytics:  analyticsHandler,
 		Tokens:     tokenManager,
 		APIVersion: "v1",

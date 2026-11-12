@@ -41,6 +41,8 @@ export interface Link {
   id: string
   slug: string
   short_url: string
+  domain_id: string
+  domain_hostname: string
   destination_url: string
   title: string
   notes: string
@@ -49,6 +51,24 @@ export interface Link {
   starts_at: string | null
   expires_at: string | null
   created_at: string
+}
+
+// Domain 是工作空间自定义域名
+export interface Domain {
+  id: string
+  hostname: string
+  status: number
+  verified: boolean
+  txt_name: string
+  txt_value: string
+  cname: string
+  last_verified_at: string | null
+  created_at: string
+}
+
+// DomainListResponse 是域名接口响应
+export interface DomainListResponse {
+  items: Domain[]
 }
 
 // LinkListResponse 是游标分页的链接列表
@@ -60,6 +80,7 @@ export interface LinkListResponse {
 // CreateLinkInput 是创建短链表单提交的数据
 export interface CreateLinkInput {
   destination_url: string
+  domain_id?: string
   alias?: string
   title?: string
   notes?: string

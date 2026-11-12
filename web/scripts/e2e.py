@@ -11,6 +11,7 @@ from playwright.sync_api import sync_playwright
 
 
 BASE_URL = os.getenv("SHORTURL_WEB_URL", "http://127.0.0.1:5173")
+API_URL = os.getenv("SHORTURL_API_URL", "http://127.0.0.1:18080")
 CHROME_PATH = os.getenv(
     "PLAYWRIGHT_CHROME_PATH",
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -23,6 +24,7 @@ def main() -> None:
     suffix = uuid.uuid4().hex[:8]
     email = f"web-{suffix}@example.com"
     alias = f"web{suffix}"
+    hostname = f"go-{suffix}.example.com"
     console_errors: list[str] = []
 
     with sync_playwright() as playwright:
@@ -48,14 +50,27 @@ def main() -> None:
         page.wait_for_url("**/dashboard")
         page.wait_for_load_state("networkidle")
 
+        page.screenshot(path=ARTIFACT_DIR / "dashboard.png", full_page=True)
+
+        page.get_by_role("link", name="域名").click()
+        page.wait_for_url("**/domains")
+        page.get_by_role("textbox", name="域名", exact=True).fill(hostname)
+        page.get_by_role("button", name="添加域名").click()
+        page.get_by_role("heading", name=hostname, exact=True).wait_for()
+        page.screenshot(path=ARTIFACT_DIR / "domains.png", full_page=True)
+        page.get_by_role("button", name="验证域名").click()
+        page.get_by_text("已验证").wait_for()
+
+        page.get_by_role("link", name="工作台").click()
+        page.wait_for_url("**/dashboard")
         page.get_by_role("button", name="创建短链接").click()
         dialog = page.get_by_role("dialog")
+        dialog.get_by_label("域名").select_option(label=hostname)
         dialog.get_by_label("目标地址").fill("https://example.com/original")
         dialog.get_by_label("自定义短码").fill(alias)
         dialog.get_by_label("标题").fill("浏览器验收短链")
         dialog.get_by_role("button", name="创建短链").click()
         page.get_by_text("浏览器验收短链").wait_for()
-        page.screenshot(path=ARTIFACT_DIR / "dashboard.png", full_page=True)
 
         page.get_by_role("link", name="浏览器验收短链").click()
         page.wait_for_url("**/links/**")
@@ -69,8 +84,8 @@ def main() -> None:
             "Googlebot/2.1",
         ):
             response = request.get(
-                f"{BASE_URL}/r/{alias}",
-                headers={"User-Agent": user_agent},
+                f"{API_URL}/{alias}",
+                headers={"User-Agent": user_agent, "Host": hostname},
                 max_redirects=0,
             )
             assert response.status == 302, response.text()
@@ -110,6 +125,7 @@ def main() -> None:
             {
                 "email": email,
                 "alias": alias,
+                "hostname": hostname,
                 "total_clicks": total_clicks,
                 "screenshots": str(ARTIFACT_DIR),
             }

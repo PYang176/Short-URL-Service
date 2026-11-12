@@ -3,6 +3,8 @@ import type {
   AnalyticsOverview,
   AuthResponse,
   CreateLinkInput,
+  Domain,
+  DomainListResponse,
   Link,
   LinkListResponse,
   ProfileResponse,
@@ -88,6 +90,34 @@ export function updateLink(id: string, input: UpdateLinkInput): Promise<Link> {
 // deleteLink 软删除短链接
 export function deleteLink(id: string): Promise<void> {
   return requestJSON<void>(`/api/v1/links/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+// listDomains 获取工作空间自定义域名
+export function listDomains(): Promise<DomainListResponse> {
+  return requestJSON<DomainListResponse>('/api/v1/domains')
+}
+
+// addDomain 添加待验证域名
+export function addDomain(hostname: string): Promise<Domain> {
+  return requestJSON<Domain>('/api/v1/domains', {
+    method: 'POST',
+    body: JSON.stringify({ hostname }),
+  })
+}
+
+// verifyDomain 验证域名 DNS 记录
+export function verifyDomain(id: string): Promise<Domain> {
+  return requestJSON<Domain>(
+    `/api/v1/domains/${encodeURIComponent(id)}/verify`,
+    { method: 'POST' },
+  )
+}
+
+// deleteDomain 删除未使用域名
+export function deleteDomain(id: string): Promise<void> {
+  return requestJSON<void>(`/api/v1/domains/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
 }

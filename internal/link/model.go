@@ -48,6 +48,8 @@ type Link struct {
 	WorkspaceID string `db:"workspace_id"`
 	// DomainID 是链接所用 ULID 域名标识
 	DomainID string `db:"domain_id"`
+	// DomainHostname 是域名规范化后的 Host
+	DomainHostname string `db:"domain_hostname"`
 	// Slug 是大小写敏感的唯一短码
 	Slug string `db:"slug"`
 	// DestinationURL 是规范化后的目标地址
@@ -82,6 +84,8 @@ type Link struct {
 type CreateInput struct {
 	// DestinationURL 是用户输入的原始目标地址
 	DestinationURL string
+	// DomainID 是可选自定义域名标识，为空时使用平台默认域名
+	DomainID string
 	// Alias 是可选自定义短码
 	Alias string
 	// Title 是可选链接标题

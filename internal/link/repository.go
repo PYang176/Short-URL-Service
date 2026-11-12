@@ -117,11 +117,13 @@ func (r *MySQLRepository) Create(ctx context.Context, link *Link) error {
 func (r *MySQLRepository) FindByID(ctx context.Context, workspaceID, id string) (*Link, error) {
 	var result Link
 	err := r.db.GetContext(ctx, &result, `
-		SELECT id, workspace_id, domain_id, slug, destination_url, destination_hash,
-			title, notes, status, redirect_code, starts_at, expires_at,
-			human_clicks, version, created_at, updated_at, deleted_at
-		FROM links
-		WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
+		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
+			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			l.status, l.redirect_code, l.starts_at, l.expires_at,
+			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
+		FROM links AS l
+		INNER JOIN domains AS d ON d.id = l.domain_id
+		WHERE l.workspace_id = ? AND l.id = ? AND l.deleted_at IS NULL
 		LIMIT 1`, workspaceID, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -136,11 +138,13 @@ func (r *MySQLRepository) FindByID(ctx context.Context, workspaceID, id string) 
 func (r *MySQLRepository) FindByDomainSlug(ctx context.Context, domainID, slug string) (*Link, error) {
 	var result Link
 	err := r.db.GetContext(ctx, &result, `
-		SELECT id, workspace_id, domain_id, slug, destination_url, destination_hash,
-			title, notes, status, redirect_code, starts_at, expires_at,
-			human_clicks, version, created_at, updated_at, deleted_at
-		FROM links
-		WHERE domain_id = ? AND slug = ? AND deleted_at IS NULL
+		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
+			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			l.status, l.redirect_code, l.starts_at, l.expires_at,
+			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
+		FROM links AS l
+		INNER JOIN domains AS d ON d.id = l.domain_id
+		WHERE l.domain_id = ? AND l.slug = ? AND l.deleted_at IS NULL
 		LIMIT 1`, domainID, slug)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -160,24 +164,28 @@ func (r *MySQLRepository) List(
 	beforeID string,
 ) ([]Link, error) {
 	query := `
-		SELECT id, workspace_id, domain_id, slug, destination_url, destination_hash,
-			title, notes, status, redirect_code, starts_at, expires_at,
-			human_clicks, version, created_at, updated_at, deleted_at
-		FROM links
-		WHERE workspace_id = ? AND deleted_at IS NULL
-		ORDER BY created_at DESC, id DESC
+		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
+			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			l.status, l.redirect_code, l.starts_at, l.expires_at,
+			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
+		FROM links AS l
+		INNER JOIN domains AS d ON d.id = l.domain_id
+		WHERE l.workspace_id = ? AND l.deleted_at IS NULL
+		ORDER BY l.created_at DESC, l.id DESC
 		LIMIT ?`
 	args := []any{workspaceID, limit}
 	if beforeCreatedAt != nil && beforeID != "" {
 		query = `
-		SELECT id, workspace_id, domain_id, slug, destination_url, destination_hash,
-			title, notes, status, redirect_code, starts_at, expires_at,
-			human_clicks, version, created_at, updated_at, deleted_at
-		FROM links
-		WHERE workspace_id = ?
-		  AND deleted_at IS NULL
-		  AND (created_at, id) < (?, ?)
-		ORDER BY created_at DESC, id DESC
+		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
+			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			l.status, l.redirect_code, l.starts_at, l.expires_at,
+			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
+		FROM links AS l
+		INNER JOIN domains AS d ON d.id = l.domain_id
+		WHERE l.workspace_id = ?
+		  AND l.deleted_at IS NULL
+		  AND (l.created_at, l.id) < (?, ?)
+		ORDER BY l.created_at DESC, l.id DESC
 		LIMIT ?`
 		args = []any{workspaceID, *beforeCreatedAt, beforeID, limit}
 	}

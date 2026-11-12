@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,6 +36,8 @@ func NewHandler(service *Service, recorder ClickRecorder, logger *slog.Logger) *
 type createRequest struct {
 	// DestinationURL 是准备缩短的目标地址
 	DestinationURL string `json:"destination_url" binding:"required"`
+	// DomainID 是可选自定义域名 ID
+	DomainID string `json:"domain_id"`
 	// Alias 是可选自定义短码
 	Alias string `json:"alias"`
 	// Title 是可选链接标题
@@ -73,6 +76,10 @@ type linkResponse struct {
 	Slug string `json:"slug"`
 	// ShortURL 是完整短链地址
 	ShortURL string `json:"short_url"`
+	// DomainID 是链接所用域名 ID
+	DomainID string `json:"domain_id"`
+	// DomainHostname 是链接所用域名 Host
+	DomainHostname string `json:"domain_hostname"`
 	// DestinationURL 是当前目标地址
 	DestinationURL string `json:"destination_url"`
 	// Title 是链接标题
@@ -270,22 +277,43 @@ func (h *Handler) Redirect(c *gin.Context) {
 		writeLinkError(c, err)
 		return
 	}
-	if h.recorder != nil {
-		recordCtx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Millisecond)
-		defer cancel()
-		if err := h.recorder.RecordClick(recordCtx, ClickContext{
-			ResolveResult: result,
-			IP:            c.ClientIP(),
-			UserAgent:     c.Request.UserAgent(),
-			Referrer:      c.Request.Referer(),
-			Language:      c.GetHeader("Accept-Language"),
-			Country:       c.GetHeader("CF-IPCountry"),
-			Query:         c.Request.URL.Query(),
-		}); err != nil {
-			h.logger.Warn("写入点击事件失败", "link_id", result.LinkID, "error", err)
-		}
-	}
+	h.recordClick(c, result)
 	http.Redirect(c.Writer, c.Request, result.DestinationURL, result.RedirectCode)
+}
+
+// RedirectByHost 按请求 Host 解析自定义域名短链
+func (h *Handler) RedirectByHost(c *gin.Context) {
+	hostname := c.Request.Host
+	if host, _, err := net.SplitHostPort(hostname); err == nil {
+		hostname = host
+	}
+	result, err := h.service.ResolveByHost(c.Request.Context(), hostname, c.Param("slug"))
+	if err != nil {
+		writeLinkError(c, err)
+		return
+	}
+	h.recordClick(c, result)
+	http.Redirect(c.Writer, c.Request, result.DestinationURL, result.RedirectCode)
+}
+
+// recordClick 记录一次成功跳转，失败不阻断响应
+func (h *Handler) recordClick(c *gin.Context, result ResolveResult) {
+	if h.recorder == nil {
+		return
+	}
+	recordCtx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Millisecond)
+	defer cancel()
+	if err := h.recorder.RecordClick(recordCtx, ClickContext{
+		ResolveResult: result,
+		IP:            c.ClientIP(),
+		UserAgent:     c.Request.UserAgent(),
+		Referrer:      c.Request.Referer(),
+		Language:      c.GetHeader("Accept-Language"),
+		Country:       c.GetHeader("CF-IPCountry"),
+		Query:         c.Request.URL.Query(),
+	}); err != nil {
+		h.logger.Warn("写入点击事件失败", "link_id", result.LinkID, "error", err)
+	}
 }
 
 // toResponse 将链接模型转换为 HTTP DTO
@@ -294,6 +322,8 @@ func (h *Handler) toResponse(link *Link) linkResponse {
 		ID:             link.ID,
 		Slug:           link.Slug,
 		ShortURL:       h.service.ShortURL(link),
+		DomainID:       link.DomainID,
+		DomainHostname: link.DomainHostname,
 		DestinationURL: link.DestinationURL,
 		Title:          link.Title,
 		Notes:          link.Notes,

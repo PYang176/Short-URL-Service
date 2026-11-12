@@ -28,6 +28,7 @@
 - Worker 批量、幂等写入 MySQL 点击明细。
 - 单链接总点击、独立访客、趋势、设备和浏览器分析。
 - 动态二维码 PNG/SVG 生成，二维码编码稳定短链并附带扫码来源参数。
+- 自定义域名添加、TXT/CNAME 说明、Mock/DNS 验证和 Host 跳转。
 - Docker Compose 管理 Redis、API、Worker 和迁移任务。
 
 ## 技术栈
@@ -256,6 +257,24 @@ Authorization: Bearer <access-token>
 `format` 支持 `png` 和 `svg`，`size` 有效范围为 128 至 1024。
 二维码编码 `/r/{slug}?utm_source=qr`，因此修改链接目标后二维码仍然有效，
 扫码访问也会进入点击分析。
+
+### 自定义域名
+
+```text
+GET    /api/v1/domains
+POST   /api/v1/domains
+POST   /api/v1/domains/{id}/verify
+DELETE /api/v1/domains/{id}
+```
+
+本地 `DOMAIN_VERIFY_MODE=mock` 时可直接完成验证。通过已验证域名创建的短链
+可请求：
+
+```text
+GET http://{custom-domain}/{slug}
+```
+
+本地可用 `Host` 请求头模拟自定义域名，不需要真实 DNS。
 
 ## 质量检查
 
