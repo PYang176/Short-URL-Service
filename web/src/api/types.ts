@@ -126,6 +126,12 @@ export interface TrialLinksResponse {
   expires_at: string | null
 }
 
+// TrialClaimResponse 是游客链接迁移到正式工作空间的结果
+export interface TrialClaimResponse {
+  claimed_links: number
+  claimed_clicks: number
+}
+
 // SummaryMetrics 是链接分析核心指标
 export interface SummaryMetrics {
   total_clicks: number

@@ -12,6 +12,7 @@ const auth = useAuthStore()
 const { user, workspace } = storeToRefs(auth)
 const { links, loading, errorMessage, load } = useLinks(8)
 const createOpen = shallowRef(false)
+const claimNotice = shallowRef(auth.consumeTrialClaimNotice())
 
 const activeCount = computed(
   () => links.value.filter((link) => link.status === 1).length,
@@ -56,6 +57,8 @@ async function handleCreated(): Promise<void> {
         </div>
       </div>
     </header>
+
+    <p v-if="claimNotice" class="inline-notice" role="status">{{ claimNotice }}</p>
 
     <section class="metric-strip" aria-label="当前已加载链接概况">
       <div class="metric-cell">

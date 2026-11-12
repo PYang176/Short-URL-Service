@@ -65,6 +65,8 @@ def main() -> None:
         page.get_by_role("button", name="创建账号").click()
         page.wait_for_url("**/dashboard")
         page.wait_for_load_state("networkidle")
+        page.get_by_text("已认领 1 条试用短链，点击数据也已保留。").wait_for()
+        page.get_by_text("免登录试用", exact=True).wait_for()
 
         page.screenshot(path=ARTIFACT_DIR / "dashboard.png", full_page=True)
 

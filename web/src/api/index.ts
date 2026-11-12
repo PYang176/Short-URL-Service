@@ -9,6 +9,7 @@ import type {
   LinkListResponse,
   ProfileResponse,
   TrialCreateInput,
+  TrialClaimResponse,
   TrialLink,
   TrialLinksResponse,
   UpdateLinkInput,
@@ -162,4 +163,9 @@ export function createTrialLink(input: TrialCreateInput): Promise<TrialLink> {
 // listTrialLinks 获取当前浏览器游客会话的短期短链
 export function listTrialLinks(): Promise<TrialLinksResponse> {
   return requestJSON<TrialLinksResponse>('/api/v1/trial/links', {}, false)
+}
+
+// claimTrialLinks 将当前游客 Cookie 下的链接迁移到登录工作空间
+export function claimTrialLinks(): Promise<TrialClaimResponse> {
+  return requestJSON<TrialClaimResponse>('/api/v1/trial/claim', { method: 'POST' })
 }
