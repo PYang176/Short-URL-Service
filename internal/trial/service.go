@@ -25,6 +25,13 @@ type Repository interface {
 	ReleaseLinkSlot(ctx context.Context, sessionID string, now time.Time) error
 	// CleanupExpired 分批删除过期游客工作空间及关联数据
 	CleanupExpired(ctx context.Context, now time.Time, limit int) (int, error)
+	// Claim 将游客工作空间数据迁移到指定正式工作空间
+	Claim(
+		ctx context.Context,
+		tokenHash []byte,
+		targetWorkspaceID string,
+		now time.Time,
+	) (*ClaimResult, error)
 }
 
 // Service 创建、恢复并限制游客会话
@@ -121,6 +128,19 @@ func (s *Service) MaxLinks() int {
 // SessionTTL 返回游客 Cookie 的最大保存时长
 func (s *Service) SessionTTL() time.Duration {
 	return s.sessionTTL
+}
+
+// Claim 将当前 Cookie 游客会话中的链接和点击迁移到登录工作空间
+func (s *Service) Claim(
+	ctx context.Context,
+	token, targetWorkspaceID string,
+) (*ClaimResult, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrSessionNotFound
+	}
+	hash := sha256.Sum256([]byte(token))
+	return s.repo.Claim(ctx, hash[:], targetWorkspaceID, s.now())
 }
 
 // generateToken 生成 Cookie 原始 Token 和用于数据库查询的 SHA-256 摘要

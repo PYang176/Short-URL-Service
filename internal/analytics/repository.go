@@ -87,10 +87,18 @@ func (r *MySQLRepository) InsertBatch(ctx context.Context, events []Event) (int6
 		return 0, nil
 	}
 
+	linkWorkspaces, err := r.loadLinkWorkspaces(ctx, events)
+	if err != nil {
+		return 0, err
+	}
+
 	const columnsPerEvent = 19
 	values := make([]string, 0, len(events))
 	args := make([]any, 0, len(events)*columnsPerEvent)
 	for _, event := range events {
+		if workspaceID, ok := linkWorkspaces[event.LinkID]; ok {
+			event.WorkspaceID = workspaceID
+		}
 		values = append(values, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 		args = append(args,
 			event.EventID, event.WorkspaceID, event.LinkID, event.DomainID, event.Slug,
@@ -115,6 +123,50 @@ func (r *MySQLRepository) InsertBatch(ctx context.Context, events []Event) (int6
 		return 0, fmt.Errorf("读取点击事件写入行数失败: %w", err)
 	}
 	return inserted, nil
+}
+
+// loadLinkWorkspaces 读取链接当前归属，修正认领前已入队点击的 workspace
+func (r *MySQLRepository) loadLinkWorkspaces(
+	ctx context.Context,
+	events []Event,
+) (map[string]string, error) {
+	linkIDs := make([]string, 0, len(events))
+	seen := make(map[string]struct{}, len(events))
+	for _, event := range events {
+		if _, ok := seen[event.LinkID]; ok {
+			continue
+		}
+		seen[event.LinkID] = struct{}{}
+		linkIDs = append(linkIDs, event.LinkID)
+	}
+
+	query, args, err := sqlx.In(`
+		SELECT id, workspace_id
+		FROM links
+		WHERE id IN (?)`, linkIDs)
+	if err != nil {
+		return nil, fmt.Errorf("构造点击链接归属查询失败: %w", err)
+	}
+
+	type linkWorkspace struct {
+		ID          string `db:"id"`
+		WorkspaceID string `db:"workspace_id"`
+	}
+	rows := make([]linkWorkspace, 0, len(linkIDs))
+	if err := r.db.SelectContext(
+		ctx,
+		&rows,
+		r.db.Rebind(query),
+		args...,
+	); err != nil {
+		return nil, fmt.Errorf("查询点击链接归属失败: %w", err)
+	}
+
+	result := make(map[string]string, len(rows))
+	for _, row := range rows {
+		result[row.ID] = row.WorkspaceID
+	}
+	return result, nil
 }
 
 // Summary 查询时间范围内的核心指标

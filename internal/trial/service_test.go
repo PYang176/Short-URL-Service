@@ -85,11 +85,35 @@ func TestServiceEnforcesLinkQuota(t *testing.T) {
 	}
 }
 
+// TestServiceClaim 验证游客 Token 能认领到登录工作空间并只消费一次
+func TestServiceClaim(t *testing.T) {
+	now := time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)
+	repo := newFakeRepository()
+	service := NewService(repo, time.Hour, 3)
+	service.now = func() time.Time { return now }
+	_, token, err := service.Create(context.Background())
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	result, err := service.Claim(context.Background(), token, "workspace-target")
+	if err != nil {
+		t.Fatalf("Claim() error = %v", err)
+	}
+	if result.Links != 1 || result.Clicks != 2 || repo.claimedTarget != "workspace-target" {
+		t.Fatalf("Claim() = %+v, target = %q", result, repo.claimedTarget)
+	}
+	if _, err := service.Claim(context.Background(), token, "workspace-target"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("second Claim() error = %v, want ErrSessionNotFound", err)
+	}
+}
+
 type fakeRepository struct {
-	sessions    map[string]*Session
-	tokens      map[string]*Session
-	createdName string
-	createdSlug string
+	sessions      map[string]*Session
+	tokens        map[string]*Session
+	createdName   string
+	createdSlug   string
+	claimedTarget string
 }
 
 // newFakeRepository 创建游客会话内存仓库
@@ -145,6 +169,30 @@ func (r *fakeRepository) ReleaseLinkSlot(_ context.Context, sessionID string, _ 
 // CleanupExpired 模拟过期游客数据清理
 func (r *fakeRepository) CleanupExpired(_ context.Context, _ time.Time, _ int) (int, error) {
 	return 0, nil
+}
+
+// Claim 模拟将游客会话消费到目标工作空间
+func (r *fakeRepository) Claim(
+	_ context.Context,
+	tokenHash []byte,
+	targetWorkspaceID string,
+	now time.Time,
+) (*ClaimResult, error) {
+	session, ok := r.tokens[string(tokenHash)]
+	if !ok {
+		return nil, ErrSessionNotFound
+	}
+	if !session.ExpiresAt.After(now) {
+		return nil, ErrSessionExpired
+	}
+	delete(r.tokens, string(tokenHash))
+	delete(r.sessions, session.ID)
+	r.claimedTarget = targetWorkspaceID
+	return &ClaimResult{
+		Links:     1,
+		Clicks:    2,
+		CacheKeys: []ClaimedLink{{DomainID: "domain-1", Slug: "trial"}},
+	}, nil
 }
 
 // cloneSession 复制游客会话，避免测试仓库暴露内部切片

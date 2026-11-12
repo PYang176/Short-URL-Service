@@ -274,6 +274,11 @@ func (s *Service) Delete(ctx context.Context, workspaceID, linkID string) error 
 	return nil
 }
 
+// Invalidate 删除指定域名和短码的跳转缓存
+func (s *Service) Invalidate(ctx context.Context, domainID, slug string) {
+	s.deleteCache(ctx, domainID, slug)
+}
+
 // Resolve 解析默认域名短码并返回跳转元数据
 func (s *Service) Resolve(ctx context.Context, slug string) (ResolveResult, error) {
 	if s.defaultDomain == nil {

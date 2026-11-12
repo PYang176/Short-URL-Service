@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
 )
 
@@ -65,6 +66,13 @@ type linkListResponse struct {
 	Limit int `json:"limit"`
 	// ExpiresAt 是游客会话失效时间；无有效会话时为空
 	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+type claimResponse struct {
+	// ClaimedLinks 是迁移到正式工作空间的链接数量
+	ClaimedLinks int64 `json:"claimed_links"`
+	// ClaimedClicks 是迁移到正式工作空间的点击明细数量
+	ClaimedClicks int64 `json:"claimed_clicks"`
 }
 
 // Create 创建不绑定登录账号的短期短链接
@@ -158,6 +166,45 @@ func (h *Handler) List(c *gin.Context) {
 	})
 }
 
+// Claim 将当前 Cookie 游客会话中的链接认领到登录工作空间
+func (h *Handler) Claim(c *gin.Context) {
+	token, err := c.Cookie(CookieName)
+	if err != nil {
+		c.JSON(http.StatusOK, claimResponse{})
+		return
+	}
+
+	result, err := h.sessions.Claim(
+		c.Request.Context(),
+		token,
+		c.GetString(identity.ContextWorkspaceID),
+	)
+	if err != nil {
+		switch {
+		case IsInvalidSession(err):
+			h.clearCookie(c)
+			c.JSON(http.StatusOK, claimResponse{})
+		case errors.Is(err, ErrClaimConflict):
+			h.writeError(c, http.StatusConflict, "TRIAL_CLAIM_CONFLICT", "游客链接与当前工作空间中的短码冲突")
+		case errors.Is(err, ErrClaimTargetNotFound):
+			h.writeError(c, http.StatusConflict, "TRIAL_CLAIM_TARGET_INVALID", "当前工作空间无法接收游客链接")
+		default:
+			h.logger.Error("认领游客链接失败", "error", err)
+			h.writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		}
+		return
+	}
+
+	for _, key := range result.CacheKeys {
+		h.links.Invalidate(c.Request.Context(), key.DomainID, key.Slug)
+	}
+	h.clearCookie(c)
+	c.JSON(http.StatusOK, claimResponse{
+		ClaimedLinks:  result.Links,
+		ClaimedClicks: result.Clicks,
+	})
+}
+
 // ensureSession 恢复有效 Cookie；不存在或已过期时创建新的游客会话
 func (h *Handler) ensureSession(c *gin.Context) (*Session, error) {
 	session, err := h.sessionFromCookie(c)
@@ -187,10 +234,6 @@ func (h *Handler) sessionFromCookie(c *gin.Context) (*Session, error) {
 
 // setCookie 写入不暴露给 JavaScript 的游客会话 Cookie
 func (h *Handler) setCookie(c *gin.Context, token string) {
-	secure := c.Request.TLS != nil
-	if forwardedProto := strings.TrimSpace(strings.Split(c.GetHeader("X-Forwarded-Proto"), ",")[0]); forwardedProto != "" {
-		secure = strings.EqualFold(forwardedProto, "https")
-	}
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(
 		CookieName,
@@ -198,9 +241,24 @@ func (h *Handler) setCookie(c *gin.Context, token string) {
 		int(h.sessions.SessionTTL().Seconds()),
 		"/",
 		"",
-		secure,
+		h.cookieSecure(c),
 		true,
 	)
+}
+
+// clearCookie 删除浏览器中的游客会话 Cookie
+func (h *Handler) clearCookie(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(CookieName, "", -1, "/", "", h.cookieSecure(c), true)
+}
+
+// cookieSecure 根据直接 TLS 或可信代理协议判断 Cookie 是否需要 Secure
+func (h *Handler) cookieSecure(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	forwardedProto := strings.TrimSpace(strings.Split(c.GetHeader("X-Forwarded-Proto"), ",")[0])
+	return strings.EqualFold(forwardedProto, "https")
 }
 
 // toResponse 将链接模型转换为游客接口 DTO

@@ -26,3 +26,21 @@ type Session struct {
 	// UpdatedAt 是会话最近修改的 UTC 时间
 	UpdatedAt time.Time `db:"updated_at"`
 }
+
+// ClaimedLink 是认领后需要失效旧跳转缓存的链接定位信息
+type ClaimedLink struct {
+	// DomainID 是链接使用的域名 ULID
+	DomainID string `db:"domain_id"`
+	// Slug 是链接短码
+	Slug string `db:"slug"`
+}
+
+// ClaimResult 是游客链接认领的事务结果
+type ClaimResult struct {
+	// Links 是迁移的链接数量
+	Links int64
+	// Clicks 是迁移的点击明细数量
+	Clicks int64
+	// CacheKeys 是需要失效旧缓存的链接
+	CacheKeys []ClaimedLink
+}

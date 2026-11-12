@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	driver "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -187,4 +188,113 @@ func (r *MySQLRepository) CleanupExpired(
 		return 0, fmt.Errorf("提交游客清理事务失败: %w", err)
 	}
 	return len(workspaceIDs), nil
+}
+
+// Claim 将游客工作空间中的链接和点击迁移到正式工作空间
+func (r *MySQLRepository) Claim(
+	ctx context.Context,
+	tokenHash []byte,
+	targetWorkspaceID string,
+	now time.Time,
+) (*ClaimResult, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("开启游客认领事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var session Session
+	err = tx.GetContext(ctx, &session, `
+		SELECT id, workspace_id, token_hash, link_count, expires_at, created_at, updated_at
+		FROM trial_sessions
+		WHERE token_hash = ?
+		FOR UPDATE`, tokenHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrSessionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("锁定游客会话失败: %w", err)
+	}
+	if !session.ExpiresAt.After(now) {
+		return nil, ErrSessionExpired
+	}
+
+	var targetKind uint8
+	err = tx.GetContext(ctx, &targetKind, `
+		SELECT kind FROM workspaces WHERE id = ? FOR UPDATE`, targetWorkspaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrClaimTargetNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("锁定认领目标工作空间失败: %w", err)
+	}
+	if targetKind != 1 {
+		return nil, ErrClaimTargetNotFound
+	}
+
+	cacheKeys := make([]ClaimedLink, 0, session.LinkCount)
+	if err := tx.SelectContext(ctx, &cacheKeys, `
+		SELECT domain_id, slug
+		FROM links
+		WHERE workspace_id = ?
+		FOR UPDATE`, session.WorkspaceID); err != nil {
+		return nil, fmt.Errorf("锁定游客链接失败: %w", err)
+	}
+
+	linkResult, err := tx.ExecContext(ctx, `
+		UPDATE links
+		SET workspace_id = ?,
+			expires_at = CASE WHEN deleted_at IS NULL THEN NULL ELSE expires_at END,
+			version = version + 1,
+			updated_at = ?
+		WHERE workspace_id = ?`,
+		targetWorkspaceID, now, session.WorkspaceID,
+	)
+	if err != nil {
+		var mysqlErr *driver.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return nil, ErrClaimConflict
+		}
+		return nil, fmt.Errorf("迁移游客链接失败: %w", err)
+	}
+	linkCount, err := linkResult.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("读取游客链接迁移行数失败: %w", err)
+	}
+
+	clickResult, err := tx.ExecContext(ctx, `
+		UPDATE click_events SET workspace_id = ? WHERE workspace_id = ?`,
+		targetWorkspaceID, session.WorkspaceID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("迁移游客点击事件失败: %w", err)
+	}
+	clickCount, err := clickResult.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("读取游客点击迁移行数失败: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM idempotency_keys WHERE workspace_id = ?`, session.WorkspaceID); err != nil {
+		return nil, fmt.Errorf("删除游客幂等状态失败: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM trial_sessions WHERE id = ?`, session.ID); err != nil {
+		return nil, fmt.Errorf("删除已认领游客会话失败: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM workspaces WHERE id = ? AND kind = ?`,
+		session.WorkspaceID, WorkspaceKindTrial,
+	); err != nil {
+		return nil, fmt.Errorf("删除已认领游客工作空间失败: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交游客认领事务失败: %w", err)
+	}
+	return &ClaimResult{
+		Links:     linkCount,
+		Clicks:    clickCount,
+		CacheKeys: cacheKeys,
+	}, nil
 }
