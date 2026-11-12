@@ -140,21 +140,27 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Apply migrations
         run: go run ./cmd/migrate up
+      - name: Build services
+        run: |
+          go build -o /tmp/shorturl-api ./cmd/api
+          go build -o /tmp/shorturl-worker ./cmd/worker
       - name: Start services
         run: |
-          HTTP_ADDR=:18080 go run ./cmd/api > /tmp/api.log 2>&1 &
-          HTTP_ADDR=:18081 go run ./cmd/worker > /tmp/worker.log 2>&1 &
+          HTTP_ADDR=:18080 /tmp/shorturl-api > /tmp/api.log 2>&1 &
+          HTTP_ADDR=:18081 /tmp/shorturl-worker > /tmp/worker.log 2>&1 &
           cd web
           npm run dev > /tmp/web.log 2>&1 &
           cd ..
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:18080/health/ready >/dev/null \
+              && curl -fsS http://127.0.0.1:18081/health/live >/dev/null \
               && curl -fsS http://127.0.0.1:5173 >/dev/null; then
               exit 0
             fi
             sleep 1
           done
           cat /tmp/api.log
+          cat /tmp/worker.log
           cat /tmp/web.log
           exit 1
       - name: Browser E2E
