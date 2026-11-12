@@ -24,7 +24,7 @@
 - Redis 跳转缓存、空值缓存、TTL 抖动和并发回源合并。
 - 修改或删除链接后的缓存主动失效。
 - `GET /r/{slug}` 默认域名公开跳转。
-- Docker Compose 完整本地依赖。
+- Docker Compose 管理 Redis、API、Worker 和迁移任务。
 
 ## 技术栈
 
@@ -66,11 +66,34 @@ cmd/api ---------------------- MySQL
 
 ## 快速启动
 
-需要 Docker Desktop。
+需要 Docker Desktop，以及宿主机本地 MySQL 8。
+
+先在本地 MySQL 创建数据库和专用账号：
+
+```sql
+CREATE DATABASE short_url
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+CREATE USER 'short_url'@'%' IDENTIFIED BY 'change-me';
+GRANT ALL PRIVILEGES ON short_url.* TO 'short_url'@'%';
+FLUSH PRIVILEGES;
+```
+
+账号 Host 使用 `%` 是为了允许 Docker Desktop 容器通过
+`host.docker.internal` 访问宿主机 MySQL。实际使用时请设置强密码，并保证
+MySQL 只监听可信网络。
 
 ```powershell
 Copy-Item deploy\.env.example deploy\.env
+notepad deploy\.env
 docker compose --env-file deploy\.env -f deploy\docker-compose.yml up -d --build
+```
+
+`deploy\.env` 中的 `MYSQL_DSN` 必须指向自己的本地 MySQL。容器模式下默认使用：
+
+```text
+host.docker.internal:3306
 ```
 
 默认地址：
@@ -83,7 +106,8 @@ docker compose --env-file deploy\.env -f deploy\docker-compose.yml up -d --build
 | 就绪检查 | http://localhost:18080/health/ready |
 | Prometheus 指标 | http://localhost:18080/metrics |
 
-MySQL 和 Redis 默认不映射到宿主机端口，避免与本地已有实例冲突。需要直接访问时可通过容器内网或临时 Compose override。
+MySQL 不放入 Docker，也不由 Compose 创建数据卷或端口映射。Redis、API 和
+Worker 在 Compose 中运行，迁移任务直接连接宿主机 MySQL。
 
 停止环境：
 
@@ -93,7 +117,7 @@ docker compose --env-file deploy\.env -f deploy\docker-compose.yml down
 
 ## 本地开发
 
-先启动 MySQL 和 Redis，然后执行迁移：
+先启动宿主机 MySQL 和 Redis，然后执行迁移：
 
 ```powershell
 Copy-Item .env.example .env
