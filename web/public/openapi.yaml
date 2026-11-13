@@ -14,6 +14,7 @@ tags:
   - name: Links
   - name: Analytics
   - name: API Keys
+  - name: Webhooks
 paths:
   /api/v1/trial/links:
     get:
@@ -145,6 +146,78 @@ paths:
           description: 已撤销
         "404":
           description: API Key 不存在
+  /api/v1/webhooks:
+    get:
+      tags: [Webhooks]
+      summary: 查询当前工作空间 Webhook 端点
+      responses:
+        "200":
+          description: Webhook 端点列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WebhookEndpoint"
+    post:
+      tags: [Webhooks]
+      summary: 创建 Webhook 端点，签名 Secret 只返回一次
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookRequest"
+      responses:
+        "201":
+          description: Webhook 端点与只显示一次的签名 Secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWebhookResponse"
+        "400":
+          description: URL 格式无效或目标地址违反安全策略
+  /api/v1/webhooks/{id}:
+    delete:
+      tags: [Webhooks]
+      summary: 停用 Webhook 端点并终止待投递任务
+      parameters:
+        - $ref: "#/components/parameters/WebhookID"
+      responses:
+        "204":
+          description: 已停用
+        "404":
+          description: Webhook 不存在
+  /api/v1/webhooks/{id}/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: 查询端点近期 Outbox 投递记录
+      parameters:
+        - $ref: "#/components/parameters/WebhookID"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: 投递记录列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WebhookDelivery"
 components:
   securitySchemes:
     BearerAuth:
@@ -155,6 +228,13 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
+  parameters:
+    WebhookID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     CreateTrialLinkRequest:
       type: object
@@ -211,5 +291,99 @@ components:
               - links:write
               - analytics:read
         expires_at:
+          type: string
+          format: date-time
+    CreateWebhookRequest:
+      type: object
+      additionalProperties: false
+      required: [name, url]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: 本地演示允许 HTTP 和私网地址；默认只允许公网 HTTPS。
+    WebhookEndpoint:
+      type: object
+      required:
+        - id
+        - name
+        - url
+        - status
+        - failure_count
+        - disabled_at
+        - created_at
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        status:
+          type: integer
+          enum: [1, 2]
+          description: 1 接收中，2 已停用
+        failure_count:
+          type: integer
+        disabled_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    CreateWebhookResponse:
+      type: object
+      required: [endpoint, secret]
+      properties:
+        endpoint:
+          $ref: "#/components/schemas/WebhookEndpoint"
+        secret:
+          type: string
+          description: 仅创建响应返回一次的 HMAC 签名 Secret。
+    WebhookDelivery:
+      type: object
+      required:
+        - id
+        - event_id
+        - event_type
+        - status
+        - attempt_count
+        - next_attempt_at
+        - response_status
+        - last_error
+        - delivered_at
+        - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        event_id:
+          type: string
+        event_type:
+          type: string
+          enum: [link.created, link.updated, link.deleted]
+        status:
+          type: integer
+          enum: [1, 2, 3, 4]
+          description: 1 待投递，2 投递中，3 成功，4 终止
+        attempt_count:
+          type: integer
+        next_attempt_at:
+          type: string
+          format: date-time
+        response_status:
+          type: [integer, "null"]
+        last_error:
+          type: string
+        delivered_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
           type: string
           format: date-time

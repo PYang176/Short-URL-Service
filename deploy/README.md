@@ -41,6 +41,7 @@ GRAFANA_ADMIN_PASSWORD
 - Redis Stream 长度和 Pending 数量。
 - 点击消费成功、失败和无效消息速率。
 - ACK 错误。
+- Webhook 投递成功率和失败率。
 - API 与 Worker 进程常驻内存。
 
 仪表盘只读 provisioning，Git 中的 JSON 是唯一配置来源。
@@ -52,4 +53,22 @@ GRAFANA_ADMIN_PASSWORD
 
 ```text
 ALLOW_MIGRATION_DOWN=true
+```
+
+## Webhook
+
+本地演示可设置：
+
+```text
+WEBHOOK_ALLOW_PRIVATE_TARGETS=true
+```
+
+这一选项只用于访问本机或 Docker 私网接收端。其他环境保持 `false`，公网
+目标只允许 HTTPS。Worker 参数：
+
+```text
+WEBHOOK_POLL_INTERVAL=5s
+WEBHOOK_MAX_ATTEMPTS=8
+WEBHOOK_REQUEST_TIMEOUT=10s
+WEBHOOK_LEASE=30s
 ```

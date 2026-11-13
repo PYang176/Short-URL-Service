@@ -1,7 +1,8 @@
 # Short URL Service
 
 基于 Go 和 Vue 3 的短链接管理平台，覆盖用户认证、短链创建与缓存跳转、
-动态二维码、自定义域名、Redis Streams 点击分析和可视化工作台。
+动态二维码、自定义域名、Redis Streams 点击分析和可视化工作台。短链变更
+通过 MySQL 事务型 Outbox 投递为带 HMAC 签名的 Webhook。
 
 ## 已实现
 
@@ -20,6 +21,7 @@
 - MySQL 点击明细、趋势、独立访客、设备、系统、浏览器和来源分析。
 - 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
 - API Key 生命周期、作用域认证、撤销、按 Key 限流和 OpenAPI 3.1 文档。
+- Webhook 端点管理、事务型 Outbox、HMAC-SHA256 签名、重试和自动停用。
 - 动态二维码 PNG/SVG，二维码指向稳定短链并标记扫码来源。
 - 自定义域名添加、TXT/CNAME 验证和 Host 跳转。
 - Vue 3 管理端、项目内 SVG 趋势图和 CSS 维度排行。
@@ -257,6 +259,11 @@ GET    /api/v1/api-keys
 POST   /api/v1/api-keys
 DELETE /api/v1/api-keys/{id}
 
+GET    /api/v1/webhooks
+POST   /api/v1/webhooks
+DELETE /api/v1/webhooks/{id}
+GET    /api/v1/webhooks/{id}/deliveries
+
 POST   /api/v1/links
 GET    /api/v1/links
 GET    /api/v1/links/{id}
@@ -285,6 +292,17 @@ X-API-Key: sl_live_<prefix>.<secret>
 完整 Secret 只在创建时返回一次，数据库只保存前缀和 SHA-256 哈希。作用域包括
 `links:read`、`links:write` 和 `analytics:read`。开发者页面为 `/developer`，
 OpenAPI 3.1 文件为 `/openapi.yaml`。
+
+Webhook 支持 `link.created`、`link.updated` 和 `link.deleted`。创建端点时
+返回一次 `whsec_...` Secret，后续请求头包含 Event ID、事件类型、Unix 时间戳
+和签名。签名值为：
+
+```text
+sha256=HEX(HMAC-SHA256(secret, timestamp + "." + body))
+```
+
+只有 2xx 算成功。失败按有上限的指数退避重试，达到 `WEBHOOK_MAX_ATTEMPTS`
+后终止任务并自动停用端点。开发页面可以查看最近投递状态。
 
 默认 `GET /api/v1/links/{id}/qr` 返回 PNG，可用：
 
@@ -338,11 +356,14 @@ go test -tags=integration ./...
 浏览器 E2E：
 
 ```powershell
+$env:SHORTURL_WEBHOOK_TARGET_HOST='127.0.0.1'
 python web\scripts\e2e.py
 ```
 
 覆盖注册、域名验证、自定义域名短链、UA 分类、分析、二维码下载、编辑链接
-和移动端布局。
+和移动端布局。脚本会启动本地 HTTP 接收端，验证 Webhook 创建、HMAC 签名、
+`link.created` 事件和页面投递状态。API 与 Worker 直接运行在宿主机时使用
+`127.0.0.1`；通过 Compose 运行时使用默认的 `host.docker.internal`。
 
 ## 压测结果
 
@@ -371,6 +392,8 @@ internal/identity    用户、工作空间、认证
 internal/link        短链、缓存、跳转和二维码
 internal/domain      自定义域名
 internal/analytics   点击事件和分析
+internal/trial       游客会话、配额和临时链接
+internal/webhook     Webhook 配置、Outbox 投递和签名
 internal/platform    配置、MySQL、Redis、限流、幂等
 internal/transport   HTTP 路由与中间件
 web                  Vue 3 管理端
@@ -387,5 +410,5 @@ deploy               Docker Compose
 - 浏览器当前使用 `localStorage` 保存 Access Token 和 Refresh Token；CSP
   可降低脚本注入风险，但不能替代 HttpOnly Cookie 和 CSRF 防护。
 - 自定义域名生产环境尚未接 Caddy 自动证书。
-- 暂未实现文件夹、标签、Webhook、管理员治理和团队角色。
+- 暂未实现文件夹、标签、管理员治理和团队角色。
 - 自定义域名的管理入口仍由平台域名提供；自定义域名根路径由 API 处理。
