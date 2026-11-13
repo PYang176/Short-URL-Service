@@ -18,6 +18,7 @@ type Metrics struct {
 
 // NewMetrics 在指定 Registry 注册应用指标
 func NewMetrics(registry prometheus.Registerer) *Metrics {
+	RegisterRuntimeMetrics(registry)
 	m := &Metrics{
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "shorturl",

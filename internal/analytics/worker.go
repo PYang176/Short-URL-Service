@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 )
 
 const (
@@ -34,6 +36,8 @@ type Worker struct {
 	group string
 	// consumer 是当前进程消费者名称
 	consumer string
+	// metrics 记录 Stream 队列和消费结果指标
+	metrics *observability.ClickMetrics
 }
 
 // NewWorker 创建点击事件消费者
@@ -42,8 +46,13 @@ func NewWorker(
 	redisClient *redis.Client,
 	logger *slog.Logger,
 	stream, group string,
+	clickMetrics ...*observability.ClickMetrics,
 ) *Worker {
 	hostname, _ := os.Hostname()
+	var metrics *observability.ClickMetrics
+	if len(clickMetrics) > 0 {
+		metrics = clickMetrics[0]
+	}
 	return &Worker{
 		repo:     repo,
 		redis:    redisClient,
@@ -51,6 +60,7 @@ func NewWorker(
 		stream:   stream,
 		group:    group,
 		consumer: fmt.Sprintf("%s-%d", hostname, os.Getpid()),
+		metrics:  metrics,
 	}
 }
 
@@ -112,6 +122,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		if claimErr == nil && len(claimed) > 0 {
 			w.processMessages(ctx, claimed)
 		}
+		w.updateQueueMetrics(ctx)
 	}
 }
 
@@ -132,11 +143,13 @@ func (w *Worker) processMessages(ctx context.Context, messages []redis.XMessage)
 
 	events := make([]Event, 0, len(messages))
 	ackIDs := make([]string, 0, len(messages))
+	invalidCount := 0
 	for _, message := range messages {
 		raw, ok := message.Values["event"].(string)
 		if !ok {
 			w.logger.Warn("点击消息缺少 event 字段", "stream_id", message.ID)
 			ackIDs = append(ackIDs, message.ID)
+			invalidCount++
 			continue
 		}
 
@@ -144,24 +157,50 @@ func (w *Worker) processMessages(ctx context.Context, messages []redis.XMessage)
 		if err := json.Unmarshal([]byte(raw), &event); err != nil {
 			w.logger.Warn("解析点击事件失败", "stream_id", message.ID, "error", err)
 			ackIDs = append(ackIDs, message.ID)
+			invalidCount++
 			continue
 		}
 		events = append(events, event)
 		ackIDs = append(ackIDs, message.ID)
 	}
 
+	if invalidCount > 0 {
+		w.metrics.ObserveConsume(w.stream, w.group, "invalid", invalidCount, 0)
+	}
 	if len(events) > 0 {
+		started := time.Now()
 		inserted, err := w.repo.InsertBatch(ctx, events)
 		if err != nil {
+			w.metrics.ObserveConsume(w.stream, w.group, "error", len(events), time.Since(started))
 			w.logger.Warn("批量写入点击事件失败，保留 Pending", "error", err)
 			return
 		}
+		w.metrics.ObserveConsume(w.stream, w.group, "success", len(events), time.Since(started))
 		w.logger.Debug("点击事件批次已写入", "received", len(events), "inserted", inserted)
 	}
 
 	if len(ackIDs) > 0 {
 		if err := w.redis.XAck(ctx, w.stream, w.group, ackIDs...).Err(); err != nil {
+			w.metrics.IncACKError(w.stream, w.group)
 			w.logger.Warn("点击事件 ACK 失败", "error", err)
 		}
 	}
+}
+
+// updateQueueMetrics 刷新 Stream 长度和 Pending 指标
+func (w *Worker) updateQueueMetrics(ctx context.Context) {
+	if w.metrics == nil {
+		return
+	}
+	length, err := w.redis.XLen(ctx, w.stream).Result()
+	if err != nil {
+		w.logger.Debug("读取点击 Stream 长度失败", "error", err)
+		return
+	}
+	pending, err := w.redis.XPending(ctx, w.stream, w.group).Result()
+	if err != nil {
+		w.logger.Debug("读取点击 Pending 数量失败", "error", err)
+		return
+	}
+	w.metrics.ObserveQueue(w.stream, w.group, length, pending.Count)
 }

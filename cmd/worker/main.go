@@ -17,6 +17,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/cache"
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/database"
+	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 	"github.com/PYang176/Short-URL-Service/internal/trial"
 )
 
@@ -62,6 +63,8 @@ func run() error {
 	}()
 
 	registry := prometheus.NewRegistry()
+	observability.RegisterRuntimeMetrics(registry)
+	clickMetrics := observability.NewClickMetrics(registry)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -99,6 +102,7 @@ func run() error {
 		logger,
 		cfg.Analytics.ClickStream,
 		cfg.Analytics.ConsumerGroup,
+		clickMetrics,
 	)
 	workerErrCh := make(chan error, 1)
 	go func() {
