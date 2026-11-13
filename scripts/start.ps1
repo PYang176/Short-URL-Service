@@ -9,7 +9,7 @@ if (-not (Test-Path (Join-Path $root "deploy\.env"))) {
     Copy-Item `
         -LiteralPath (Join-Path $root "deploy\.env.example") `
         -Destination (Join-Path $root "deploy\.env")
-    Write-Host "已创建 deploy\.env，请填写 MYSQL_DSN、JWT_SECRET 和 ANALYTICS_HASH_SECRET。"
+    Write-Host "已创建 deploy\.env，请填写 MYSQL_DSN、JWT_SECRET、ANALYTICS_HASH_SECRET 和 GRAFANA_ADMIN_PASSWORD。"
     exit 1
 }
 
