@@ -40,6 +40,7 @@ $composeArgs = @(
     "up", "-d"
 )
 if (-not $NoBuild) {
-    $composeArgs += "--build"
+    $composeArgs += "--build", "--force-recreate"
 }
+$composeArgs += "api", "worker", "migrate", "web", "prometheus", "grafana"
 docker @composeArgs
