@@ -587,7 +587,7 @@ h3 {
 
 .metric-strip {
   display: grid;
-  grid-template-columns: 10rem 10rem minmax(14rem, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -1500,6 +1500,11 @@ h3 {
 
   .metric-cell:nth-child(2) {
     border-right: 0;
+  }
+
+  .metric-cell:nth-child(3),
+  .metric-cell:nth-child(4) {
+    border-top: 1px solid var(--line);
   }
 
   .metric-cell-wide {

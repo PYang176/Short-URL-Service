@@ -13,6 +13,7 @@ import type {
   TrialLink,
   TrialLinksResponse,
   UpdateLinkInput,
+  WorkspaceAnalyticsOverview,
 } from './types'
 
 // login 使用邮箱和密码登录
@@ -138,6 +139,15 @@ export function deleteDomain(id: string): Promise<void> {
 export function getAnalytics(id: string, days: number): Promise<AnalyticsOverview> {
   return requestJSON<AnalyticsOverview>(
     `/api/v1/links/${encodeURIComponent(id)}/analytics?days=${days}`,
+  )
+}
+
+// getWorkspaceAnalytics 获取当前工作空间整体分析
+export function getWorkspaceAnalytics(
+  days: number,
+): Promise<WorkspaceAnalyticsOverview> {
+  return requestJSON<WorkspaceAnalyticsOverview>(
+    `/api/v1/analytics/overview?days=${days}`,
   )
 }
 

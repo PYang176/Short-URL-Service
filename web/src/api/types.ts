@@ -165,6 +165,33 @@ export interface AnalyticsOverview {
   referrers: BreakdownItem[]
 }
 
+// WorkspaceAnalyticsSummary 是工作空间整体指标
+export interface WorkspaceAnalyticsSummary {
+  total_links: number
+  active_links: number
+  total_clicks: number
+  human_clicks: number
+  bot_clicks: number
+  unique_visitors: number
+}
+
+// WorkspaceTopLink 是工作空间点击排行中的链接
+export interface WorkspaceTopLink {
+  id: string
+  slug: string
+  title: string
+  status: number
+  clicks: number
+}
+
+// WorkspaceAnalyticsOverview 是工作空间整体分析响应
+export interface WorkspaceAnalyticsOverview {
+  days: number
+  summary: WorkspaceAnalyticsSummary
+  trend: TrendPoint[]
+  top_links: WorkspaceTopLink[]
+}
+
 // ApiErrorPayload 是后端统一错误响应
 export interface ApiErrorPayload {
   error?: {

@@ -67,7 +67,12 @@ def main() -> None:
         page.wait_for_url("**/dashboard")
         page.wait_for_load_state("networkidle")
         page.get_by_text("已认领 1 条试用短链，点击数据也已保留。").wait_for()
-        page.get_by_text("免登录试用", exact=True).wait_for()
+        page.locator(".recent-list").get_by_text("免登录试用", exact=True).wait_for()
+        page.get_by_text("整体点击趋势").wait_for()
+        total_links = page.locator(".metric-cell").filter(
+            has_text="全部链接",
+        ).locator("strong").inner_text()
+        assert total_links == "1", f"expected 1 workspace link, got {total_links}"
 
         page.screenshot(path=ARTIFACT_DIR / "dashboard.png", full_page=True)
 
@@ -89,9 +94,11 @@ def main() -> None:
         dialog.get_by_label("自定义短码").fill(alias)
         dialog.get_by_label("标题").fill("浏览器验收短链")
         dialog.get_by_role("button", name="创建短链").click()
-        page.get_by_text("浏览器验收短链").wait_for()
+        page.locator(".recent-list").get_by_text("浏览器验收短链").wait_for()
 
-        page.get_by_role("link", name="浏览器验收短链").click()
+        page.locator(".recent-list").get_by_role(
+            "link", name="浏览器验收短链",
+        ).click()
         page.wait_for_url("**/links/**")
         page.wait_for_load_state("networkidle")
         page.get_by_role("heading", name="浏览器验收短链").wait_for()
