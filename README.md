@@ -18,6 +18,7 @@
 - 创建短链 `Idempotency-Key`，相同请求可安全重放。
 - Redis Streams 点击事件、Consumer Group、ACK 和 Pending 接管。
 - MySQL 点击明细、趋势、独立访客、设备、系统、浏览器和来源分析。
+- 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
 - 动态二维码 PNG/SVG，二维码指向稳定短链并标记扫码来源。
 - 自定义域名添加、TXT/CNAME 验证和 Host 跳转。
 - Vue 3 管理端、项目内 SVG 趋势图和 CSS 维度排行。
@@ -240,6 +241,7 @@ PATCH  /api/v1/links/{id}
 DELETE /api/v1/links/{id}
 GET    /api/v1/links/{id}/qr
 GET    /api/v1/links/{id}/analytics
+GET    /api/v1/analytics/overview
 
 GET    /api/v1/domains
 POST   /api/v1/domains
