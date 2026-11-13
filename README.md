@@ -34,7 +34,7 @@
 | 缓存与事件 | Redis 7、Redis Streams |
 | 前端 | Vue 3、TypeScript、Pinia、Vue Router |
 | Web 服务 | Nginx |
-| 可观测性 | Prometheus 指标、`log/slog` |
+| 可观测性 | Prometheus、Grafana、`log/slog` |
 | 测试 | Go test、真实 MySQL 集成测试、Playwright、k6 |
 | CI | GitHub Actions |
 
@@ -70,6 +70,7 @@ Web 使用独立的 Nginx 镜像。MySQL 不放入 Docker，避免本地数据�
 - [OpenAPI 3.1](web/public/openapi.yaml)：开发者接口描述。
 - [开发路线](docs/开发路线.md)：里程碑、验收项和当前技术债。
 - [工程协作规则](AGENTS.md)：本地资源、测试和提交约束。
+- [部署与监控](deploy/README.md)：镜像、迁移、Prometheus 和 Grafana。
 
 ## 快速启动
 
@@ -114,7 +115,12 @@ ANALYTICS_HASH_SECRET
 ```
 
 脚本会先构建 Vue 和 `shorturl-app:local`，再启动 Redis、一次性迁移、API、
-Worker 和 Nginx。
+Worker、Nginx、Prometheus 和 Grafana。
+
+Grafana 会自动加载 `Short URL Overview` 仪表盘，覆盖 HTTP 请求速率、
+P95/P99 延迟、点击 Stream 长度、Pending 数量、消费速率、ACK 错误和进程内存。
+登录账号来自 `deploy/.env` 中的 `GRAFANA_ADMIN_USER` 和
+`GRAFANA_ADMIN_PASSWORD`。
 
 ### 数据库迁移
 
@@ -130,6 +136,8 @@ Worker 和 Nginx。
 | Worker 健康检查 | http://localhost:18081/health/live |
 | API 就绪检查 | http://localhost:18080/health/ready |
 | Prometheus 指标 | http://localhost:18080/metrics |
+| Prometheus | http://127.0.0.1:19090 |
+| Grafana | http://127.0.0.1:13000 |
 
 停止：
 
