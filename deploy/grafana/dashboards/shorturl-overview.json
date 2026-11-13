@@ -336,6 +336,46 @@
       ],
       "title": "进程常驻内存",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (event_type, result) (rate(shorturl_webhook_delivery_total[5m]))",
+          "legendFormat": "{{event_type}} · {{result}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Webhook 投递速率",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

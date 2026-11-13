@@ -46,6 +46,8 @@ type Config struct {
 	Idempotency IdempotencyConfig
 	// Trial 控制匿名游客试用会话和链接额度
 	Trial TrialConfig
+	// Webhook 控制 Outbox 投递轮询、超时和重试
+	Webhook WebhookConfig
 }
 
 // HTTPConfig 控制 HTTP 服务端行为
@@ -180,6 +182,20 @@ type TrialConfig struct {
 	MaxLinks int
 }
 
+// WebhookConfig 定义 Webhook Worker 和本地目标策略
+type WebhookConfig struct {
+	// PollInterval 是 Worker 查询待投递任务的周期
+	PollInterval time.Duration
+	// MaxAttempts 是单个投递任务允许的最大尝试次数
+	MaxAttempts int
+	// RequestTimeout 是单次回调 HTTP 请求的最长时间
+	RequestTimeout time.Duration
+	// Lease 是 Worker 锁定投递任务的最长时间
+	Lease time.Duration
+	// AllowPrivateTargets 允许本地演示访问 HTTP、回环和私网地址
+	AllowPrivateTargets bool
+}
+
 // Load 从可选 .env 和环境变量读取配置并完成启动校验
 func Load() (Config, error) {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -255,6 +271,13 @@ func Load() (Config, error) {
 			SessionTTL:      getDuration("TRIAL_SESSION_TTL", 24*time.Hour),
 			CleanupInterval: getDuration("TRIAL_CLEANUP_INTERVAL", 10*time.Minute),
 			MaxLinks:        getInt("TRIAL_LINK_LIMIT", 3),
+		},
+		Webhook: WebhookConfig{
+			PollInterval:        getDuration("WEBHOOK_POLL_INTERVAL", 5*time.Second),
+			MaxAttempts:         getInt("WEBHOOK_MAX_ATTEMPTS", 8),
+			RequestTimeout:      getDuration("WEBHOOK_REQUEST_TIMEOUT", 10*time.Second),
+			Lease:               getDuration("WEBHOOK_LEASE", 30*time.Second),
+			AllowPrivateTargets: getBool("WEBHOOK_ALLOW_PRIVATE_TARGETS", false),
 		},
 	}
 
@@ -336,6 +359,21 @@ func (c Config) Validate() error {
 	}
 	if c.Trial.MaxLinks < 1 || c.Trial.MaxLinks > 10 {
 		return fmt.Errorf("TRIAL_LINK_LIMIT 必须在 1 至 10 之间")
+	}
+	if c.Webhook.PollInterval < time.Second || c.Webhook.PollInterval > time.Minute {
+		return fmt.Errorf("WEBHOOK_POLL_INTERVAL 必须在 1 秒至 1 分钟之间")
+	}
+	if c.Webhook.MaxAttempts < 1 || c.Webhook.MaxAttempts > 20 {
+		return fmt.Errorf("WEBHOOK_MAX_ATTEMPTS 必须在 1 至 20 之间")
+	}
+	if c.Webhook.RequestTimeout < time.Second || c.Webhook.RequestTimeout > time.Minute {
+		return fmt.Errorf("WEBHOOK_REQUEST_TIMEOUT 必须在 1 秒至 1 分钟之间")
+	}
+	if c.Webhook.Lease <= c.Webhook.RequestTimeout || c.Webhook.Lease > 10*time.Minute {
+		return fmt.Errorf("WEBHOOK_LEASE 必须大于请求超时且不超过 10 分钟")
+	}
+	if c.Env == EnvProduction && c.Webhook.AllowPrivateTargets {
+		return fmt.Errorf("生产环境不允许 WEBHOOK_ALLOW_PRIVATE_TARGETS=true")
 	}
 	for name, rule := range map[string]RateLimitRule{
 		"register":     c.RateLimit.Register,

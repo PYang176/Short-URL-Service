@@ -25,6 +25,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Env != EnvDevelopment {
 		t.Fatalf("Env = %q, want %q", cfg.Env, EnvDevelopment)
 	}
+	if cfg.Webhook.MaxAttempts != 8 || cfg.Webhook.AllowPrivateTargets {
+		t.Fatalf("Webhook 默认配置 = %+v", cfg.Webhook)
+	}
 }
 
 // TestValidateRejectsInvalidPublicURL 验证非绝对公开地址会被拒绝
@@ -130,6 +133,12 @@ func TestValidateRejectsInvalidTrialConfig(t *testing.T) {
 			CleanupInterval: time.Minute,
 			MaxLinks:        3,
 		},
+		Webhook: WebhookConfig{
+			PollInterval:   5 * time.Second,
+			MaxAttempts:    8,
+			RequestTimeout: 10 * time.Second,
+			Lease:          30 * time.Second,
+		},
 	}
 
 	tests := []struct {
@@ -163,5 +172,56 @@ func TestValidateRejectsInvalidTrialConfig(t *testing.T) {
 				t.Fatal("Validate() error = nil, want invalid trial config error")
 			}
 		})
+	}
+}
+
+// TestValidateRejectsPrivateWebhookTargetsInProduction 验证生产环境不能开放私网回调
+func TestValidateRejectsPrivateWebhookTargetsInProduction(t *testing.T) {
+	validRule := RateLimitRule{Limit: 1, Window: time.Minute}
+	cfg := Config{
+		Env:           EnvProduction,
+		PublicBaseURL: "https://short.example.com",
+		HTTP:          HTTPConfig{Addr: ":8080"},
+		Auth: AuthConfig{
+			JWTSecret: "production-jwt-secret-0123456789abcdef",
+		},
+		MySQL: MySQLConfig{DSN: "dsn", MaxOpenConns: 1},
+		Redis: RedisConfig{Addr: "localhost:6379", PoolSize: 1},
+		Analytics: AnalyticsConfig{
+			HashSecret:    "production-analytics-secret-0123456789abcdef",
+			ClickStream:   "clicks",
+			ConsumerGroup: "analytics",
+		},
+		Domain: DomainConfig{VerifyMode: "mock", CNAME: "links.localhost"},
+		RateLimit: RateLimitConfig{
+			Enabled:     true,
+			Register:    validRule,
+			Login:       validRule,
+			Refresh:     validRule,
+			API:         validRule,
+			CreateLink:  validRule,
+			Redirect:    validRule,
+			TrialCreate: validRule,
+		},
+		Security: SecurityConfig{MaxBodyBytes: 1024, MaxHeaderBytes: 1024},
+		Idempotency: IdempotencyConfig{
+			TTL: time.Hour,
+		},
+		Trial: TrialConfig{
+			SessionTTL:      time.Hour,
+			CleanupInterval: time.Minute,
+			MaxLinks:        3,
+		},
+		Webhook: WebhookConfig{
+			PollInterval:        5 * time.Second,
+			MaxAttempts:         8,
+			RequestTimeout:      10 * time.Second,
+			Lease:               30 * time.Second,
+			AllowPrivateTargets: true,
+		},
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want private webhook target rejection")
 	}
 }

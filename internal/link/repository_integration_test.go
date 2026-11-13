@@ -85,10 +85,10 @@ func TestMySQLRepositoryLifecycle(t *testing.T) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	if err := repo.Create(t.Context(), link); err != nil {
+	if err := repo.Create(t.Context(), link, nil); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if err := repo.Create(t.Context(), cloneLink(link)); !errors.Is(err, ErrSlugTaken) {
+	if err := repo.Create(t.Context(), cloneLink(link), nil); !errors.Is(err, ErrSlugTaken) {
 		t.Fatalf("重复短码 Create() error = %v, want ErrSlugTaken", err)
 	}
 
@@ -113,7 +113,7 @@ func TestMySQLRepositoryLifecycle(t *testing.T) {
 	found.DestinationHash = changedHash[:]
 	found.Version++
 	found.UpdatedAt = now.Add(time.Second)
-	if err := repo.Update(t.Context(), found); err != nil {
+	if err := repo.Update(t.Context(), found, nil); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestMySQLRepositoryLifecycle(t *testing.T) {
 		t.Fatalf("更新后目标地址 = %q", updated.DestinationURL)
 	}
 
-	if err := repo.SoftDelete(t.Context(), workspaceID, link.ID, now.Add(2*time.Second)); err != nil {
+	if err := repo.SoftDelete(t.Context(), workspaceID, link.ID, now.Add(2*time.Second), nil); err != nil {
 		t.Fatalf("SoftDelete() error = %v", err)
 	}
 	if _, err := repo.FindByID(t.Context(), workspaceID, link.ID); !errors.Is(err, ErrNotFound) {

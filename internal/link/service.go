@@ -166,7 +166,11 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateIn
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		}
-		if err := s.repo.Create(ctx, candidate); err == nil {
+		event, eventErr := s.newLinkEvent(candidate, "link.created", now)
+		if eventErr != nil {
+			return nil, eventErr
+		}
+		if err := s.repo.Create(ctx, candidate, event); err == nil {
 			return candidate, nil
 		} else if !errors.Is(err, ErrSlugTaken) {
 			return nil, err
@@ -254,7 +258,11 @@ func (s *Service) Update(
 
 	current.Version++
 	current.UpdatedAt = s.now()
-	if err := s.repo.Update(ctx, current); err != nil {
+	event, err := s.newLinkEvent(current, "link.updated", current.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, current, event); err != nil {
 		return nil, err
 	}
 	s.deleteCache(ctx, current.DomainID, current.Slug)
@@ -267,7 +275,16 @@ func (s *Service) Delete(ctx context.Context, workspaceID, linkID string) error 
 	if err != nil {
 		return err
 	}
-	if err := s.repo.SoftDelete(ctx, workspaceID, linkID, s.now()); err != nil {
+	now := s.now()
+	deleted := *current
+	deleted.Version++
+	deleted.UpdatedAt = now
+	deleted.DeletedAt = &now
+	event, err := s.newLinkEvent(&deleted, "link.deleted", now)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.SoftDelete(ctx, workspaceID, linkID, now, event); err != nil {
 		return err
 	}
 	s.deleteCache(ctx, current.DomainID, current.Slug)
@@ -451,6 +468,78 @@ func toCachedLink(link *Link) *CachedLink {
 		ExpiresAt:      link.ExpiresAt,
 		Version:        link.Version,
 	}
+}
+
+// newLinkEvent 构造供 Webhook 投递的链接事件 envelope
+func (s *Service) newLinkEvent(
+	link *Link,
+	eventType string,
+	occurredAt time.Time,
+) (*OutboxEvent, error) {
+	eventID := newID()
+	payload, err := json.Marshal(struct {
+		ID         string    `json:"id"`
+		Type       string    `json:"type"`
+		OccurredAt time.Time `json:"occurred_at"`
+		Data       struct {
+			ID             string     `json:"id"`
+			ShortURL       string     `json:"short_url"`
+			Slug           string     `json:"slug"`
+			DomainID       string     `json:"domain_id"`
+			DomainHostname string     `json:"domain_hostname"`
+			DestinationURL string     `json:"destination_url"`
+			Title          string     `json:"title"`
+			Status         uint8      `json:"status"`
+			RedirectCode   int        `json:"redirect_code"`
+			StartsAt       *time.Time `json:"starts_at"`
+			ExpiresAt      *time.Time `json:"expires_at"`
+			Version        int        `json:"version"`
+			CreatedAt      time.Time  `json:"created_at"`
+			UpdatedAt      time.Time  `json:"updated_at"`
+			DeletedAt      *time.Time `json:"deleted_at"`
+		} `json:"data"`
+	}{
+		ID:         eventID,
+		Type:       eventType,
+		OccurredAt: occurredAt.UTC(),
+		Data: struct {
+			ID             string     `json:"id"`
+			ShortURL       string     `json:"short_url"`
+			Slug           string     `json:"slug"`
+			DomainID       string     `json:"domain_id"`
+			DomainHostname string     `json:"domain_hostname"`
+			DestinationURL string     `json:"destination_url"`
+			Title          string     `json:"title"`
+			Status         uint8      `json:"status"`
+			RedirectCode   int        `json:"redirect_code"`
+			StartsAt       *time.Time `json:"starts_at"`
+			ExpiresAt      *time.Time `json:"expires_at"`
+			Version        int        `json:"version"`
+			CreatedAt      time.Time  `json:"created_at"`
+			UpdatedAt      time.Time  `json:"updated_at"`
+			DeletedAt      *time.Time `json:"deleted_at"`
+		}{
+			ID:             link.ID,
+			ShortURL:       s.ShortURL(link),
+			Slug:           link.Slug,
+			DomainID:       link.DomainID,
+			DomainHostname: link.DomainHostname,
+			DestinationURL: link.DestinationURL,
+			Title:          link.Title,
+			Status:         link.Status,
+			RedirectCode:   link.RedirectCode,
+			StartsAt:       link.StartsAt,
+			ExpiresAt:      link.ExpiresAt,
+			Version:        link.Version,
+			CreatedAt:      link.CreatedAt.UTC(),
+			UpdatedAt:      link.UpdatedAt.UTC(),
+			DeletedAt:      link.DeletedAt,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("序列化链接 Webhook 事件失败: %w", err)
+	}
+	return &OutboxEvent{ID: eventID, Type: eventType, Payload: payload}, nil
 }
 
 // newID 生成短链接业务使用的 ULID

@@ -14,18 +14,23 @@ import (
 type Repository interface {
 	// EnsureDefaultDomain 查询或创建平台默认域名
 	EnsureDefaultDomain(ctx context.Context, hostname string, now time.Time) (*Domain, error)
-	// Create 保存新短链接
-	Create(ctx context.Context, link *Link) error
+	// Create 在同一事务中保存新短链接和可选 Webhook 事件
+	Create(ctx context.Context, link *Link, event *OutboxEvent) error
 	// FindByID 按工作空间和链接 ID 查询未删除链接
 	FindByID(ctx context.Context, workspaceID, id string) (*Link, error)
 	// FindByDomainSlug 按域名和短码查询未删除链接
 	FindByDomainSlug(ctx context.Context, domainID, slug string) (*Link, error)
 	// List 按工作空间和游标倒序查询链接
 	List(ctx context.Context, workspaceID string, limit int, beforeCreatedAt *time.Time, beforeID string) ([]Link, error)
-	// Update 保存链接的当前可编辑字段并递增版本
-	Update(ctx context.Context, link *Link) error
-	// SoftDelete 软删除链接
-	SoftDelete(ctx context.Context, workspaceID, id string, now time.Time) error
+	// Update 在同一事务中保存可编辑字段和可选 Webhook 事件
+	Update(ctx context.Context, link *Link, event *OutboxEvent) error
+	// SoftDelete 在同一事务中软删除链接和写入可选 Webhook 事件
+	SoftDelete(
+		ctx context.Context,
+		workspaceID, id string,
+		now time.Time,
+		event *OutboxEvent,
+	) error
 }
 
 // MySQLRepository 使用 MySQL 持久化域名和链接
@@ -91,9 +96,17 @@ func (r *MySQLRepository) EnsureDefaultDomain(ctx context.Context, hostname stri
 	return toDomain(row), nil
 }
 
-// Create 保存新短链接
-func (r *MySQLRepository) Create(ctx context.Context, link *Link) error {
-	_, err := r.db.ExecContext(ctx, `
+// Create 在同一事务中保存新短链接和可选 Webhook 事件
+func (r *MySQLRepository) Create(ctx context.Context, link *Link, event *OutboxEvent) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("开始创建短链接事务失败: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO links (
 			id, workspace_id, domain_id, slug, destination_url, destination_hash,
 			title, notes, status, redirect_code, starts_at, expires_at,
@@ -109,6 +122,12 @@ func (r *MySQLRepository) Create(ctx context.Context, link *Link) error {
 			return ErrSlugTaken
 		}
 		return fmt.Errorf("创建短链接失败: %w", err)
+	}
+	if err := enqueueOutbox(ctx, tx, link.WorkspaceID, event, link.CreatedAt); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交创建短链接事务失败: %w", err)
 	}
 	return nil
 }
@@ -197,9 +216,17 @@ func (r *MySQLRepository) List(
 	return links, nil
 }
 
-// Update 保存链接的当前可编辑字段并递增版本
-func (r *MySQLRepository) Update(ctx context.Context, link *Link) error {
-	result, err := r.db.ExecContext(ctx, `
+// Update 在同一事务中保存可编辑字段和可选 Webhook 事件
+func (r *MySQLRepository) Update(ctx context.Context, link *Link, event *OutboxEvent) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("开始更新短链接事务失败: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	result, err := tx.ExecContext(ctx, `
 		UPDATE links
 		SET destination_url = ?,
 			destination_hash = ?,
@@ -226,12 +253,31 @@ func (r *MySQLRepository) Update(ctx context.Context, link *Link) error {
 	if affected == 0 {
 		return ErrNotFound
 	}
+	if err := enqueueOutbox(ctx, tx, link.WorkspaceID, event, link.UpdatedAt); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交更新短链接事务失败: %w", err)
+	}
 	return nil
 }
 
-// SoftDelete 软删除链接
-func (r *MySQLRepository) SoftDelete(ctx context.Context, workspaceID, id string, now time.Time) error {
-	result, err := r.db.ExecContext(ctx, `
+// SoftDelete 在同一事务中软删除链接和写入可选 Webhook 事件
+func (r *MySQLRepository) SoftDelete(
+	ctx context.Context,
+	workspaceID, id string,
+	now time.Time,
+	event *OutboxEvent,
+) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("开始删除短链接事务失败: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	result, err := tx.ExecContext(ctx, `
 		UPDATE links
 		SET deleted_at = ?, updated_at = ?, version = version + 1
 		WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
@@ -246,6 +292,42 @@ func (r *MySQLRepository) SoftDelete(ctx context.Context, workspaceID, id string
 	}
 	if affected == 0 {
 		return ErrNotFound
+	}
+	if err := enqueueOutbox(ctx, tx, workspaceID, event, now); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交删除短链接事务失败: %w", err)
+	}
+	return nil
+}
+
+// enqueueOutbox 将事件展开到当前工作空间所有启用端点
+func enqueueOutbox(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	workspaceID string,
+	event *OutboxEvent,
+	now time.Time,
+) error {
+	if event == nil {
+		return nil
+	}
+	if event.ID == "" || event.Type == "" || len(event.Payload) == 0 {
+		return fmt.Errorf("webhook Outbox 事件字段不完整")
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO webhook_deliveries (
+			workspace_id, webhook_id, event_id, event_type, payload,
+			status, attempt_count, next_attempt_at, created_at, updated_at
+		)
+		SELECT ?, id, ?, ?, ?, 1, 0, ?, ?, ?
+		FROM webhook_endpoints
+		WHERE workspace_id = ? AND status = 1 AND deleted_at IS NULL`,
+		workspaceID, event.ID, event.Type, string(event.Payload),
+		now, now, now, workspaceID,
+	); err != nil {
+		return fmt.Errorf("写入 Webhook Outbox 失败: %w", err)
 	}
 	return nil
 }

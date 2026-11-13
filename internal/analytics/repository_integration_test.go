@@ -187,7 +187,7 @@ func TestMySQLRepositoryWorkspaceOverview(t *testing.T) {
 			Version:         1,
 			CreatedAt:       now,
 			UpdatedAt:       now,
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatalf("创建链接 %s 失败: %v", item.title, err)
 		}
 	}

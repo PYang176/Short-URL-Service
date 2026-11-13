@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/database"
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 	"github.com/PYang176/Short-URL-Service/internal/trial"
+	"github.com/PYang176/Short-URL-Service/internal/webhook"
 )
 
 // main 启动 Worker 进程并在失败时返回非零退出码
@@ -65,6 +67,7 @@ func run() error {
 	registry := prometheus.NewRegistry()
 	observability.RegisterRuntimeMetrics(registry)
 	clickMetrics := observability.NewClickMetrics(registry)
+	webhookMetrics := observability.NewWebhookMetrics(registry)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -104,41 +107,74 @@ func run() error {
 		cfg.Analytics.ConsumerGroup,
 		clickMetrics,
 	)
-	workerErrCh := make(chan error, 1)
+	webhookCipher, err := webhook.NewSecretCipher(cfg.Auth.JWTSecret)
+	if err != nil {
+		return fmt.Errorf("初始化 Webhook 加密器失败: %w", err)
+	}
+	webhookWorker := webhook.NewWorker(
+		webhook.NewMySQLRepository(db),
+		webhookCipher,
+		logger,
+		cfg.Webhook,
+		webhookMetrics,
+	)
+
+	workerCtx, stopWorkers := context.WithCancel(runCtx)
+	defer stopWorkers()
+	workerErrCh := make(chan error, 2)
 	go func() {
-		workerErrCh <- clickWorker.Run(runCtx)
+		if err := clickWorker.Run(workerCtx); err != nil {
+			workerErrCh <- fmt.Errorf("点击分析 Worker 异常退出: %w", err)
+			return
+		}
+		workerErrCh <- nil
+	}()
+	go func() {
+		if err := webhookWorker.Run(workerCtx); err != nil {
+			workerErrCh <- fmt.Errorf("webhook Worker 异常退出: %w", err)
+			return
+		}
+		workerErrCh <- nil
 	}()
 	trialCleaner := trial.NewCleaner(
 		trial.NewMySQLRepository(db),
 		logger,
 		cfg.Trial.CleanupInterval,
 	)
-	go trialCleaner.Run(runCtx)
+	go trialCleaner.Run(workerCtx)
 
-	errCh := make(chan error, 1)
+	serverErrCh := make(chan error, 1)
 	go func() {
 		logger.Info("Worker 服务启动", "health_addr", cfg.HTTP.Addr, "env", cfg.Env)
-		errCh <- server.ListenAndServe()
+		serverErrCh <- server.ListenAndServe()
 	}()
 
 	select {
-	case err := <-errCh:
-		if err != nil && err != http.ErrServerClosed {
-			return err
+	case err := <-serverErrCh:
+		stopWorkers()
+		firstWorkerErr := <-workerErrCh
+		secondWorkerErr := <-workerErrCh
+		if !errors.Is(err, http.ErrServerClosed) {
+			return errors.Join(err, firstWorkerErr, secondWorkerErr)
 		}
-		return nil
+		return errors.Join(firstWorkerErr, secondWorkerErr)
 	case err := <-workerErrCh:
-		stop()
+		stopWorkers()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-		return err
+		shutdownErr := server.Shutdown(shutdownCtx)
+		otherErr := <-workerErrCh
+		if !errors.Is(shutdownErr, http.ErrServerClosed) {
+			return errors.Join(err, otherErr, shutdownErr)
+		}
+		return errors.Join(err, otherErr)
 	case <-runCtx.Done():
+		stopWorkers()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("关闭 Worker 健康服务失败: %w", err)
 		}
-		return <-workerErrCh
+		return errors.Join(<-workerErrCh, <-workerErrCh)
 	}
 }

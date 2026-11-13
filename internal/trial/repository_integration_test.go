@@ -183,7 +183,7 @@ func TestMySQLRepositoryClaim(t *testing.T) {
 		Version:         1,
 		CreatedAt:       now,
 		UpdatedAt:       now,
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("创建游客链接失败: %v", err)
 	}
 	eventID := ulid.Make().String()

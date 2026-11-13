@@ -18,6 +18,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
 	"github.com/PYang176/Short-URL-Service/internal/trial"
+	"github.com/PYang176/Short-URL-Service/internal/webhook"
 )
 
 // Dependencies 汇总构建 HTTP 路由所需的配置和处理器
@@ -46,6 +47,8 @@ type Dependencies struct {
 	APIKeyAuth APIKeyAuthenticator
 	// Trial 是匿名游客试用接口处理器
 	Trial *trial.Handler
+	// Webhooks 是 Webhook 配置和投递记录接口处理器
+	Webhooks *webhook.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
 	Tokens *identity.TokenManager
 	// Limiter 是共享 Redis 滑动窗口限流器
@@ -148,6 +151,10 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.GET("/api-keys", deps.APIKeys.List)
 	protected.POST("/api-keys", deps.APIKeys.Create)
 	protected.DELETE("/api-keys/:id", deps.APIKeys.Revoke)
+	protected.GET("/webhooks", deps.Webhooks.List)
+	protected.POST("/webhooks", deps.Webhooks.Create)
+	protected.DELETE("/webhooks/:id", deps.Webhooks.Disable)
+	protected.GET("/webhooks/:id/deliveries", deps.Webhooks.ListDeliveries)
 	protected.POST("/trial/claim", deps.Trial.Claim)
 	protected.GET("/domains", deps.Domains.List)
 	protected.POST("/domains", deps.Domains.Add)

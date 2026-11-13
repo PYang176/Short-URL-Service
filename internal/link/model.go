@@ -177,3 +177,13 @@ type ClickRecorder interface {
 	// RecordClick 将点击上下文写入异步事件队列
 	RecordClick(ctx context.Context, click ClickContext) error
 }
+
+// OutboxEvent 是与链接写入同事务提交的 Webhook 领域事件
+type OutboxEvent struct {
+	// ID 是事件 ULID，同一事件投递到多个端点时保持不变
+	ID string
+	// Type 是 link.created、link.updated 或 link.deleted
+	Type string
+	// Payload 是发送给 Webhook 目标的完整 JSON
+	Payload []byte
+}

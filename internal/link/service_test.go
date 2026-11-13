@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -63,6 +64,58 @@ func TestServiceCreateResolveAndInvalidate(t *testing.T) {
 	}
 	if _, err := service.Resolve(context.Background(), created.Slug); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("删除后 Resolve() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestServiceEmitsOutboxEvents 验证创建、修改和删除都会生成对应 Webhook 事件
+func TestServiceEmitsOutboxEvents(t *testing.T) {
+	service, repo, cleanup := testService(t)
+	defer cleanup()
+
+	created, err := service.Create(context.Background(), "workspace-1", CreateInput{
+		DestinationURL: "https://example.com/events",
+		Alias:          "events",
+		Title:          "Events",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	newDestination := "https://example.com/events-updated"
+	if _, err := service.Update(
+		context.Background(),
+		"workspace-1",
+		created.ID,
+		UpdateInput{DestinationURL: &newDestination},
+	); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if err := service.Delete(
+		context.Background(),
+		"workspace-1",
+		created.ID,
+	); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	events := repo.outboxEvents()
+	if len(events) != 3 {
+		t.Fatalf("Outbox 事件数 = %d, want 3", len(events))
+	}
+	wantTypes := []string{"link.created", "link.updated", "link.deleted"}
+	for index, event := range events {
+		if event.Type != wantTypes[index] || event.ID == "" {
+			t.Fatalf("事件 %d = %+v", index, event)
+		}
+		var payload struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatalf("解析事件 %d 失败: %v", index, err)
+		}
+		if payload.ID != event.ID || payload.Type != event.Type {
+			t.Fatalf("事件 %d envelope = %+v", index, payload)
+		}
 	}
 }
 
@@ -180,6 +233,7 @@ type fakeRepository struct {
 	mu          sync.Mutex
 	defaultHost string
 	links       map[string]*Link
+	events      []OutboxEvent
 	lookups     int
 }
 
@@ -201,7 +255,7 @@ func (r *fakeRepository) EnsureDefaultDomain(_ context.Context, hostname string,
 }
 
 // Create 保存测试链接并模拟短码唯一约束
-func (r *fakeRepository) Create(_ context.Context, link *Link) error {
+func (r *fakeRepository) Create(_ context.Context, link *Link, event *OutboxEvent) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := link.DomainID + ":" + link.Slug
@@ -209,6 +263,7 @@ func (r *fakeRepository) Create(_ context.Context, link *Link) error {
 		return ErrSlugTaken
 	}
 	r.links[key] = cloneLink(link)
+	r.recordEvent(event)
 	return nil
 }
 
@@ -269,7 +324,7 @@ func (r *fakeRepository) List(
 }
 
 // Update 覆盖保存测试链接
-func (r *fakeRepository) Update(_ context.Context, link *Link) error {
+func (r *fakeRepository) Update(_ context.Context, link *Link, event *OutboxEvent) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := link.DomainID + ":" + link.Slug
@@ -277,21 +332,50 @@ func (r *fakeRepository) Update(_ context.Context, link *Link) error {
 		return ErrNotFound
 	}
 	r.links[key] = cloneLink(link)
+	r.recordEvent(event)
 	return nil
 }
 
 // SoftDelete 标记测试链接已删除
-func (r *fakeRepository) SoftDelete(_ context.Context, workspaceID, id string, now time.Time) error {
+func (r *fakeRepository) SoftDelete(
+	_ context.Context,
+	workspaceID, id string,
+	now time.Time,
+	event *OutboxEvent,
+) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, link := range r.links {
 		if link.WorkspaceID == workspaceID && link.ID == id && link.DeletedAt == nil {
 			link.DeletedAt = &now
 			link.Version++
+			r.recordEvent(event)
 			return nil
 		}
 	}
 	return ErrNotFound
+}
+
+// recordEvent 保存测试事件副本
+func (r *fakeRepository) recordEvent(event *OutboxEvent) {
+	if event == nil {
+		return
+	}
+	copy := *event
+	copy.Payload = append([]byte(nil), event.Payload...)
+	r.events = append(r.events, copy)
+}
+
+// outboxEvents 返回测试仓库记录的 Outbox 事件
+func (r *fakeRepository) outboxEvents() []OutboxEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	events := make([]OutboxEvent, len(r.events))
+	for index, event := range r.events {
+		events[index] = event
+		events[index].Payload = append([]byte(nil), event.Payload...)
+	}
+	return events
 }
 
 // lookupCount 返回测试仓库的跳转回源次数

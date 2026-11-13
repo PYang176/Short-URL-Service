@@ -25,6 +25,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
 	"github.com/PYang176/Short-URL-Service/internal/transport/httpapi"
 	trialpkg "github.com/PYang176/Short-URL-Service/internal/trial"
+	"github.com/PYang176/Short-URL-Service/internal/webhook"
 )
 
 // API 持有 HTTP 服务及其数据库和 Redis 连接
@@ -106,6 +107,17 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		cfg.Trial.MaxLinks,
 	)
 	trialHandler := trialpkg.NewHandler(trialService, linkService, logger)
+	webhookCipher, err := webhook.NewSecretCipher(cfg.Auth.JWTSecret)
+	if err != nil {
+		return nil, fmt.Errorf("初始化 Webhook 加密器失败: %w", err)
+	}
+	webhookRepo := webhook.NewMySQLRepository(db)
+	webhookService := webhook.NewService(
+		webhookRepo,
+		webhookCipher,
+		cfg.Webhook.AllowPrivateTargets,
+	)
+	webhookHandler := webhook.NewHandler(webhookService, logger)
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:     cfg,
@@ -120,6 +132,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		APIKeys:    apiKeyHandler,
 		APIKeyAuth: apiKeyService,
 		Trial:      trialHandler,
+		Webhooks:   webhookHandler,
 		Tokens:     tokenManager,
 		Limiter:    slidingWindowLimiter,
 		APIVersion: "v1",
