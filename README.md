@@ -19,6 +19,7 @@
 - Redis Streams 点击事件、Consumer Group、ACK 和 Pending 接管。
 - MySQL 点击明细、趋势、独立访客、设备、系统、浏览器和来源分析。
 - 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
+- API Key 生命周期、作用域认证、撤销、按 Key 限流和 OpenAPI 3.1 文档。
 - 动态二维码 PNG/SVG，二维码指向稳定短链并标记扫码来源。
 - 自定义域名添加、TXT/CNAME 验证和 Host 跳转。
 - Vue 3 管理端、项目内 SVG 趋势图和 CSS 维度排行。
@@ -66,6 +67,7 @@ Web 使用独立的 Nginx 镜像。MySQL 不放入 Docker，避免本地数据�
 - [架构设计](docs/架构设计.md)：已实现链路和未实现模块的边界。
 - [数据库设计](docs/数据库设计.md)：已落地表和目标表设计。
 - [接口设计](docs/接口设计.md)：已实现接口与规划接口。
+- [OpenAPI 3.1](web/public/openapi.yaml)：开发者接口描述。
 - [开发路线](docs/开发路线.md)：里程碑、验收项和当前技术债。
 - [工程协作规则](AGENTS.md)：本地资源、测试和提交约束。
 
@@ -243,6 +245,10 @@ POST   /api/v1/trial/links
 GET    /api/v1/trial/links
 POST   /api/v1/trial/claim
 
+GET    /api/v1/api-keys
+POST   /api/v1/api-keys
+DELETE /api/v1/api-keys/{id}
+
 POST   /api/v1/links
 GET    /api/v1/links
 GET    /api/v1/links/{id}
@@ -260,6 +266,17 @@ DELETE /api/v1/domains/{id}
 GET /r/{slug}       默认域名
 GET /{slug}         自定义域名 Host
 ```
+
+API Key 支持：
+
+```http
+Authorization: Bearer sl_live_<prefix>.<secret>
+X-API-Key: sl_live_<prefix>.<secret>
+```
+
+完整 Secret 只在创建时返回一次，数据库只保存前缀和 SHA-256 哈希。作用域包括
+`links:read`、`links:write` 和 `analytics:read`。开发者页面为 `/developer`，
+OpenAPI 3.1 文件为 `/openapi.yaml`。
 
 默认 `GET /api/v1/links/{id}/qr` 返回 PNG，可用：
 
@@ -362,5 +379,5 @@ deploy               Docker Compose
 - 浏览器当前使用 `localStorage` 保存 Access Token 和 Refresh Token；CSP
   可降低脚本注入风险，但不能替代 HttpOnly Cookie 和 CSRF 防护。
 - 自定义域名生产环境尚未接 Caddy 自动证书。
-- 暂未实现文件夹、标签、API Key、Webhook、管理员治理和团队角色。
+- 暂未实现文件夹、标签、Webhook、管理员治理和团队角色。
 - 自定义域名的管理入口仍由平台域名提供；自定义域名根路径由 API 处理。
