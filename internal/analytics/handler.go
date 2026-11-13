@@ -58,6 +58,35 @@ func (h *Handler) Overview(c *gin.Context) {
 	c.JSON(http.StatusOK, overview)
 }
 
+// WorkspaceOverview 返回当前工作空间最近 days 天的整体分析
+func (h *Handler) WorkspaceOverview(c *gin.Context) {
+	days := 7
+	if raw := c.Query("days"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(c, http.StatusBadRequest, "INVALID_DAYS", "days 必须为数字")
+			return
+		}
+		days = parsed
+	}
+
+	overview, err := h.service.WorkspaceOverview(
+		c.Request.Context(),
+		c.GetString(identity.ContextWorkspaceID),
+		days,
+	)
+	if err != nil {
+		if errors.Is(err, link.ErrInvalidInput) {
+			writeError(c, http.StatusBadRequest, "INVALID_DAYS", "days 必须为 1 至 90")
+			return
+		}
+		h.logger.Error("查询工作空间分析失败", "error", err)
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	c.JSON(http.StatusOK, overview)
+}
+
 // writeError 输出包含请求 ID 的统一错误响应
 func writeError(c *gin.Context, status int, code, message string) {
 	requestID, _ := c.Get("request_id")

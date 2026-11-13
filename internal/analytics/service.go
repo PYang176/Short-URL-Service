@@ -79,3 +79,35 @@ func (s *Service) Overview(ctx context.Context, workspaceID, linkID string, days
 		Referrers:        referrers,
 	}, nil
 }
+
+// WorkspaceOverview 返回工作空间最近 days 天的整体分析结果
+func (s *Service) WorkspaceOverview(
+	ctx context.Context,
+	workspaceID string,
+	days int,
+) (*WorkspaceOverview, error) {
+	if days < 1 || days > 90 {
+		return nil, fmt.Errorf("%w: days 必须为 1 至 90", link.ErrInvalidInput)
+	}
+
+	to := s.now()
+	from := to.AddDate(0, 0, -days)
+	summary, err := s.repo.WorkspaceSummary(ctx, workspaceID, to, from, to)
+	if err != nil {
+		return nil, err
+	}
+	trend, err := s.repo.WorkspaceTrend(ctx, workspaceID, from, to, days > 7)
+	if err != nil {
+		return nil, err
+	}
+	topLinks, err := s.repo.TopLinks(ctx, workspaceID, from, to, 5)
+	if err != nil {
+		return nil, err
+	}
+	return &WorkspaceOverview{
+		Days:     days,
+		Summary:  summary,
+		Trend:    trend,
+		TopLinks: topLinks,
+	}, nil
+}

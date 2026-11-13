@@ -59,6 +59,48 @@ type Overview struct {
 	Referrers []BreakdownItem `json:"referrers"`
 }
 
+// WorkspaceSummary 是工作空间整体指标
+type WorkspaceSummary struct {
+	// TotalLinks 是未删除链接总数
+	TotalLinks int64 `json:"total_links" db:"total_links"`
+	// ActiveLinks 是当前处于启用和有效时间窗口内的链接数
+	ActiveLinks int64 `json:"active_links" db:"active_links"`
+	// TotalClicks 是时间范围内全部点击
+	TotalClicks int64 `json:"total_clicks" db:"total_clicks"`
+	// HumanClicks 是时间范围内未命中 UA 规则的点击
+	HumanClicks int64 `json:"human_clicks" db:"human_clicks"`
+	// BotClicks 是时间范围内疑似机器人点击
+	BotClicks int64 `json:"bot_clicks" db:"bot_clicks"`
+	// UniqueVisitors 是时间范围内按访客哈希去重的数量
+	UniqueVisitors int64 `json:"unique_visitors" db:"unique_visitors"`
+}
+
+// TopLink 是工作空间点击量最高的链接
+type TopLink struct {
+	// ID 是 ULID 链接标识
+	ID string `json:"id" db:"id"`
+	// Slug 是短链短码
+	Slug string `json:"slug" db:"slug"`
+	// Title 是链接标题
+	Title string `json:"title" db:"title"`
+	// Status 是链接状态
+	Status uint8 `json:"status" db:"status"`
+	// Clicks 是时间范围内点击数量
+	Clicks int64 `json:"clicks" db:"clicks"`
+}
+
+// WorkspaceOverview 是工作空间整体分析结果
+type WorkspaceOverview struct {
+	// Days 是查询覆盖的天数
+	Days int `json:"days"`
+	// Summary 是工作空间核心指标
+	Summary WorkspaceSummary `json:"summary"`
+	// Trend 是工作空间整体点击趋势
+	Trend []TrendPoint `json:"trend"`
+	// TopLinks 是点击量最高的链接
+	TopLinks []TopLink `json:"top_links"`
+}
+
 // Repository 定义点击事件存储和分析查询
 type Repository interface {
 	// InsertBatch 幂等批量保存点击事件
@@ -69,6 +111,26 @@ type Repository interface {
 	Trend(ctx context.Context, workspaceID, linkID string, from, to time.Time, daily bool) ([]TrendPoint, error)
 	// Breakdown 查询指定安全维度的前 10 项
 	Breakdown(ctx context.Context, workspaceID, linkID string, from, to time.Time, field string) ([]BreakdownItem, error)
+	// WorkspaceSummary 查询工作空间整体指标
+	WorkspaceSummary(
+		ctx context.Context,
+		workspaceID string,
+		now, from, to time.Time,
+	) (WorkspaceSummary, error)
+	// WorkspaceTrend 查询工作空间整体点击趋势
+	WorkspaceTrend(
+		ctx context.Context,
+		workspaceID string,
+		from, to time.Time,
+		daily bool,
+	) ([]TrendPoint, error)
+	// TopLinks 查询工作空间点击量最高的链接
+	TopLinks(
+		ctx context.Context,
+		workspaceID string,
+		from, to time.Time,
+		limit int,
+	) ([]TopLink, error)
 }
 
 // MySQLRepository 使用 MySQL 保存和查询点击事件
@@ -254,6 +316,112 @@ func (r *MySQLRepository) Breakdown(
 	items := make([]BreakdownItem, 0, 10)
 	if err := r.db.SelectContext(ctx, &items, query, workspaceID, linkID, from, to); err != nil {
 		return nil, fmt.Errorf("查询点击维度失败: %w", err)
+	}
+	return items, nil
+}
+
+// WorkspaceSummary 查询工作空间链接数和整体点击指标
+func (r *MySQLRepository) WorkspaceSummary(
+	ctx context.Context,
+	workspaceID string,
+	now, from, to time.Time,
+) (WorkspaceSummary, error) {
+	var summary WorkspaceSummary
+	if err := r.db.GetContext(ctx, &summary, `
+		SELECT
+			COUNT(*) AS total_links,
+			COALESCE(SUM(
+				status = 1
+				AND (starts_at IS NULL OR starts_at <= ?)
+				AND (expires_at IS NULL OR expires_at > ?)
+			), 0) AS active_links
+		FROM links
+		WHERE workspace_id = ? AND deleted_at IS NULL`,
+		now, now, workspaceID,
+	); err != nil {
+		return WorkspaceSummary{}, fmt.Errorf("查询工作空间链接汇总失败: %w", err)
+	}
+
+	var clicks Summary
+	if err := r.db.GetContext(ctx, &clicks, `
+		SELECT
+			COUNT(*) AS total_clicks,
+			COALESCE(SUM(is_bot = 0), 0) AS human_clicks,
+			COALESCE(SUM(is_bot = 1), 0) AS bot_clicks,
+			COUNT(DISTINCT CASE WHEN is_bot = 0 THEN visitor_hash END) AS unique_visitors
+		FROM click_events
+		WHERE workspace_id = ?
+		  AND clicked_at >= ?
+		  AND clicked_at < ?`,
+		workspaceID, from, to,
+	); err != nil {
+		return WorkspaceSummary{}, fmt.Errorf("查询工作空间点击汇总失败: %w", err)
+	}
+	summary.TotalClicks = clicks.TotalClicks
+	summary.HumanClicks = clicks.HumanClicks
+	summary.BotClicks = clicks.BotClicks
+	summary.UniqueVisitors = clicks.UniqueVisitors
+	return summary, nil
+}
+
+// WorkspaceTrend 查询工作空间整体点击趋势
+func (r *MySQLRepository) WorkspaceTrend(
+	ctx context.Context,
+	workspaceID string,
+	from, to time.Time,
+	daily bool,
+) ([]TrendPoint, error) {
+	format := "%Y-%m-%d %H:00:00"
+	if daily {
+		format = "%Y-%m-%d 00:00:00"
+	}
+	points := make([]TrendPoint, 0)
+	if err := r.db.SelectContext(ctx, &points, `
+		SELECT
+			DATE_FORMAT(clicked_at, ?) AS bucket,
+			COALESCE(SUM(is_bot = 0), 0) AS human_clicks,
+			COALESCE(SUM(is_bot = 1), 0) AS bot_clicks
+		FROM click_events
+		WHERE workspace_id = ?
+		  AND clicked_at >= ?
+		  AND clicked_at < ?
+		GROUP BY bucket
+		ORDER BY bucket ASC`,
+		format, workspaceID, from, to,
+	); err != nil {
+		return nil, fmt.Errorf("查询工作空间点击趋势失败: %w", err)
+	}
+	return points, nil
+}
+
+// TopLinks 查询工作空间点击量最高的链接
+func (r *MySQLRepository) TopLinks(
+	ctx context.Context,
+	workspaceID string,
+	from, to time.Time,
+	limit int,
+) ([]TopLink, error) {
+	items := make([]TopLink, 0, limit)
+	if err := r.db.SelectContext(ctx, &items, `
+		SELECT
+			l.id,
+			l.slug,
+			l.title,
+			l.status,
+			COUNT(ce.event_id) AS clicks
+		FROM links AS l
+		LEFT JOIN click_events AS ce
+			ON ce.workspace_id = l.workspace_id
+			AND ce.link_id = l.id
+			AND ce.clicked_at >= ?
+			AND ce.clicked_at < ?
+		WHERE l.workspace_id = ? AND l.deleted_at IS NULL
+		GROUP BY l.id, l.slug, l.title, l.status, l.created_at
+		ORDER BY clicks DESC, l.created_at DESC
+		LIMIT ?`,
+		from, to, workspaceID, limit,
+	); err != nil {
+		return nil, fmt.Errorf("查询工作空间热门链接失败: %w", err)
 	}
 	return items, nil
 }

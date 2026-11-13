@@ -154,6 +154,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.DELETE("/links/:id", deps.Links.Delete)
 	protected.GET("/links/:id/qr", deps.Links.QRCode)
 	protected.GET("/links/:id/analytics", deps.Analytics.Overview)
+	protected.GET("/analytics/overview", deps.Analytics.WorkspaceOverview)
 	protected.POST("/trial/claim", deps.Trial.Claim)
 	protected.GET("/domains", deps.Domains.List)
 	protected.POST("/domains", deps.Domains.Add)

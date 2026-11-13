@@ -110,6 +110,39 @@ func (r *fakeAnalyticsRepository) Breakdown(context.Context, string, string, tim
 	return nil, nil
 }
 
+// WorkspaceSummary 返回空的工作空间汇总
+func (r *fakeAnalyticsRepository) WorkspaceSummary(
+	context.Context,
+	string,
+	time.Time,
+	time.Time,
+	time.Time,
+) (WorkspaceSummary, error) {
+	return WorkspaceSummary{}, nil
+}
+
+// WorkspaceTrend 返回空的工作空间趋势
+func (r *fakeAnalyticsRepository) WorkspaceTrend(
+	context.Context,
+	string,
+	time.Time,
+	time.Time,
+	bool,
+) ([]TrendPoint, error) {
+	return nil, nil
+}
+
+// TopLinks 返回空的热门链接
+func (r *fakeAnalyticsRepository) TopLinks(
+	context.Context,
+	string,
+	time.Time,
+	time.Time,
+	int,
+) ([]TopLink, error) {
+	return nil, nil
+}
+
 // TestWorkerRecoversMissingConsumerGroup 验证 Stream 被清理后 Worker 自动重建消费组
 func TestWorkerRecoversMissingConsumerGroup(t *testing.T) {
 	redisServer := miniredis.RunT(t)
