@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/PYang176/Short-URL-Service/internal/apikey"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 )
 
@@ -63,4 +65,70 @@ func TestRequireAuthRejectsMissingToken(t *testing.T) {
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
 	}
+}
+
+// TestRequireAPIKeyAndScope 验证 API Key 身份上下文和只读作用域
+func TestRequireAPIKeyAndScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manager := identity.NewTokenManager("0123456789abcdef0123456789abcdef", time.Minute)
+	authenticator := fakeAPIKeyAuthenticator{
+		principal: &apikey.Principal{
+			ID:          "key-1",
+			WorkspaceID: "workspace-key",
+			Scopes:      []string{apikey.ScopeLinksRead},
+		},
+	}
+
+	router := gin.New()
+	router.Use(RequestID())
+	router.GET(
+		"/read",
+		RequireAuth(manager, authenticator),
+		RequireScope(apikey.ScopeLinksRead),
+		func(c *gin.Context) {
+			if got := c.GetString(identity.ContextWorkspaceID); got != "workspace-key" {
+				t.Errorf("workspace = %q, want workspace-key", got)
+			}
+			if got := c.GetString(contextAPIKeyID); got != "key-1" {
+				t.Errorf("API Key ID = %q, want key-1", got)
+			}
+			c.Status(http.StatusNoContent)
+		},
+	)
+	router.GET(
+		"/write",
+		RequireAuth(manager, authenticator),
+		RequireScope(apikey.ScopeLinksWrite),
+		func(c *gin.Context) {
+			c.Status(http.StatusNoContent)
+		},
+	)
+
+	readRequest := httptest.NewRequest(http.MethodGet, "/read", nil)
+	readRequest.Header.Set("X-API-Key", "sl_live_test")
+	readResponse := httptest.NewRecorder()
+	router.ServeHTTP(readResponse, readRequest)
+	if readResponse.Code != http.StatusNoContent {
+		t.Fatalf("read status = %d; body=%s", readResponse.Code, readResponse.Body.String())
+	}
+
+	writeRequest := httptest.NewRequest(http.MethodGet, "/write", nil)
+	writeRequest.Header.Set("X-API-Key", "sl_live_test")
+	writeResponse := httptest.NewRecorder()
+	router.ServeHTTP(writeResponse, writeRequest)
+	if writeResponse.Code != http.StatusForbidden {
+		t.Fatalf("write status = %d, want %d", writeResponse.Code, http.StatusForbidden)
+	}
+}
+
+type fakeAPIKeyAuthenticator struct {
+	principal *apikey.Principal
+}
+
+// Authenticate 返回固定的 API Key 测试身份
+func (f fakeAPIKeyAuthenticator) Authenticate(
+	context.Context,
+	string,
+) (*apikey.Principal, error) {
+	return f.principal, nil
 }

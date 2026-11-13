@@ -40,6 +40,24 @@ func RateLimitByWorkspace(
 	})
 }
 
+// RateLimitByPrincipal 按 API Key+IP 或工作空间应用资源接口限流
+func RateLimitByPrincipal(
+	limiter *ratelimit.Limiter,
+	logger *slog.Logger,
+	scope string,
+	rule config.RateLimitRule,
+) gin.HandlerFunc {
+	return rateLimit(limiter, logger, scope, rule, func(c *gin.Context) string {
+		if apiKeyID := c.GetString(contextAPIKeyID); apiKeyID != "" {
+			return "api-key:" + apiKeyID + ":ip:" + c.ClientIP()
+		}
+		if workspaceID := c.GetString(identity.ContextWorkspaceID); workspaceID != "" {
+			return "workspace:" + workspaceID
+		}
+		return "ip:" + c.ClientIP()
+	})
+}
+
 // rateLimit 构建统一的拒绝响应和故障策略
 func rateLimit(
 	limiter *ratelimit.Limiter,

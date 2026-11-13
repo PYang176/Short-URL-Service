@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/PYang176/Short-URL-Service/internal/analytics"
+	"github.com/PYang176/Short-URL-Service/internal/apikey"
 	"github.com/PYang176/Short-URL-Service/internal/domain"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
@@ -39,6 +40,10 @@ type Dependencies struct {
 	Domains *domain.Handler
 	// Analytics 是点击分析接口处理器
 	Analytics *analytics.Handler
+	// APIKeys 是 API Key 生命周期接口处理器
+	APIKeys *apikey.Handler
+	// APIKeyAuth 是资源接口使用的 API Key 认证器
+	APIKeyAuth APIKeyAuthenticator
 	// Trial 是匿名游客试用接口处理器
 	Trial *trial.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
@@ -140,26 +145,39 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	}
 	protected.GET("/me", deps.Identity.Profile)
 	protected.PATCH("/me", deps.Identity.UpdateProfile)
-	if deps.Config.RateLimit.Enabled {
-		protected.POST("/links",
-			RateLimitByWorkspace(deps.Limiter, deps.Logger, "api:create-link", deps.Config.RateLimit.CreateLink),
-			deps.Links.Create,
-		)
-	} else {
-		protected.POST("/links", deps.Links.Create)
-	}
-	protected.GET("/links", deps.Links.List)
-	protected.GET("/links/:id", deps.Links.Get)
-	protected.PATCH("/links/:id", deps.Links.Update)
-	protected.DELETE("/links/:id", deps.Links.Delete)
-	protected.GET("/links/:id/qr", deps.Links.QRCode)
-	protected.GET("/links/:id/analytics", deps.Analytics.Overview)
-	protected.GET("/analytics/overview", deps.Analytics.WorkspaceOverview)
+	protected.GET("/api-keys", deps.APIKeys.List)
+	protected.POST("/api-keys", deps.APIKeys.Create)
+	protected.DELETE("/api-keys/:id", deps.APIKeys.Revoke)
 	protected.POST("/trial/claim", deps.Trial.Claim)
 	protected.GET("/domains", deps.Domains.List)
 	protected.POST("/domains", deps.Domains.Add)
 	protected.POST("/domains/:id/verify", deps.Domains.Verify)
 	protected.DELETE("/domains/:id", deps.Domains.Delete)
+
+	resources := api.Group("")
+	resources.Use(RequireAuth(deps.Tokens, deps.APIKeyAuth))
+	if deps.Config.RateLimit.Enabled {
+		resources.Use(RateLimitByPrincipal(
+			deps.Limiter,
+			deps.Logger,
+			"api:resource",
+			deps.Config.RateLimit.API,
+		))
+		resources.POST("/links",
+			RequireScope(apikey.ScopeLinksWrite),
+			RateLimitByPrincipal(deps.Limiter, deps.Logger, "api:create-link", deps.Config.RateLimit.CreateLink),
+			deps.Links.Create,
+		)
+	} else {
+		resources.POST("/links", RequireScope(apikey.ScopeLinksWrite), deps.Links.Create)
+	}
+	resources.GET("/links", RequireScope(apikey.ScopeLinksRead), deps.Links.List)
+	resources.GET("/links/:id", RequireScope(apikey.ScopeLinksRead), deps.Links.Get)
+	resources.PATCH("/links/:id", RequireScope(apikey.ScopeLinksWrite), deps.Links.Update)
+	resources.DELETE("/links/:id", RequireScope(apikey.ScopeLinksWrite), deps.Links.Delete)
+	resources.GET("/links/:id/qr", RequireScope(apikey.ScopeLinksRead), deps.Links.QRCode)
+	resources.GET("/links/:id/analytics", RequireScope(apikey.ScopeAnalyticsRead), deps.Analytics.Overview)
+	resources.GET("/analytics/overview", RequireScope(apikey.ScopeAnalyticsRead), deps.Analytics.WorkspaceOverview)
 
 	if deps.Config.RateLimit.Enabled {
 		redirectLimit := RateLimitByIP(deps.Limiter, deps.Logger, "redirect", deps.Config.RateLimit.Redirect)

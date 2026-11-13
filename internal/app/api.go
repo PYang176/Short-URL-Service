@@ -13,6 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/PYang176/Short-URL-Service/internal/analytics"
+	"github.com/PYang176/Short-URL-Service/internal/apikey"
 	domainpkg "github.com/PYang176/Short-URL-Service/internal/domain"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
@@ -95,6 +96,9 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 	analyticsService := analytics.NewService(analyticsRepo, linkRepo)
 	analyticsHandler := analytics.NewHandler(analyticsService, logger)
 	slidingWindowLimiter := ratelimit.New(redisClient)
+	apiKeyRepo := apikey.NewMySQLRepository(db)
+	apiKeyService := apikey.NewService(apiKeyRepo)
+	apiKeyHandler := apikey.NewHandler(apiKeyService, logger)
 	trialRepo := trialpkg.NewMySQLRepository(db)
 	trialService := trialpkg.NewService(
 		trialRepo,
@@ -113,6 +117,8 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		Links:      linkHandler,
 		Domains:    domainHandler,
 		Analytics:  analyticsHandler,
+		APIKeys:    apiKeyHandler,
+		APIKeyAuth: apiKeyService,
 		Trial:      trialHandler,
 		Tokens:     tokenManager,
 		Limiter:    slidingWindowLimiter,
