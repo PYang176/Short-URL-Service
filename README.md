@@ -56,7 +56,8 @@ cmd/api ----------------- MySQL（宿主机）
           cmd/worker -------+
 ```
 
-API、Worker 和 Web 可以容器化。MySQL 不放入 Docker，避免本地数据库重复和
+API、Worker 和迁移任务共用单一 `shorturl-app:local` 镜像，只是执行命令不同；
+Web 使用独立的 Nginx 镜像。MySQL 不放入 Docker，避免本地数据库重复和
 数据卷迁移；Redis 使用 Docker。
 
 ## 文档
@@ -110,7 +111,15 @@ ANALYTICS_HASH_SECRET
 .\scripts\start.ps1
 ```
 
-脚本会先构建 Vue，再启动 Redis、迁移、API、Worker 和 Nginx。
+脚本会先构建 Vue 和 `shorturl-app:local`，再启动 Redis、一次性迁移、API、
+Worker 和 Nginx。
+
+### 数据库迁移
+
+迁移任务固定执行 `migrate up`。Goose 通过 MySQL 中的 `goose_db_version`
+记录已应用版本，重复启动时只检查版本并输出 `no migrations to run`，不会重复
+执行 Up 迁移，也不会清空数据库。`migrate down` 只会在人工显式执行时发生；
+生产环境还必须设置 `ALLOW_MIGRATION_DOWN=true`。
 
 | 服务 | 地址 |
 | --- | --- |

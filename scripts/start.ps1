@@ -20,9 +20,26 @@ if (-not $NoBuild) {
     } finally {
         Pop-Location
     }
+
+    docker build `
+        --pull=false `
+        --tag shorturl-app:local `
+        --file (Join-Path $root "Dockerfile") `
+        $root
+} else {
+    docker image inspect shorturl-app:local *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "镜像 shorturl-app:local 不存在，请去掉 -NoBuild 先构建镜像。"
+    }
 }
 
-docker compose `
-    --env-file (Join-Path $root "deploy\.env") `
-    -f (Join-Path $root "deploy\docker-compose.yml") `
-    up -d --build
+$composeArgs = @(
+    "compose",
+    "--env-file", (Join-Path $root "deploy\.env"),
+    "-f", (Join-Path $root "deploy\docker-compose.yml"),
+    "up", "-d"
+)
+if (-not $NoBuild) {
+    $composeArgs += "--build"
+}
+docker @composeArgs

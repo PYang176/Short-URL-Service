@@ -15,26 +15,21 @@ services:
       retries: 20
 
   migrate:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: shorturl-app:local
     command: ["/app/migrate", "up"]
+    restart: "no"
     environment:
       APP_ENV: ${APP_ENV:-development}
       MYSQL_DSN: "${MYSQL_DSN:?set MYSQL_DSN in deploy/.env}"
+      ALLOW_MIGRATION_DOWN: ${ALLOW_MIGRATION_DOWN:-false}
       REDIS_ADDR: "redis:6379"
       JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in deploy/.env}"
       ANALYTICS_HASH_SECRET: "${ANALYTICS_HASH_SECRET:?set ANALYTICS_HASH_SECRET in deploy/.env}"
-    depends_on:
-      redis:
-        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   api:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: shorturl-app:local
     command: ["/app/api"]
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -66,9 +61,7 @@ services:
       retries: 10
 
   worker:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: shorturl-app:local
     command: ["/app/worker"]
     environment:
       APP_ENV: ${APP_ENV:-development}

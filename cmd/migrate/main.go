@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,6 +33,11 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("加载配置失败: %w", err)
+	}
+	if os.Args[1] == "down" &&
+		cfg.Env == config.EnvProduction &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_MIGRATION_DOWN")), "true") {
+		return fmt.Errorf("生产环境回滚必须显式设置 ALLOW_MIGRATION_DOWN=true")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
