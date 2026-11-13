@@ -17,6 +17,9 @@ import type {
   APIKeyListResponse,
   APIKeyScope,
   CreateAPIKeyResponse,
+  CreateWebhookResponse,
+  WebhookDeliveryListResponse,
+  WebhookEndpointListResponse,
 } from './types'
 
 // login 使用邮箱和密码登录
@@ -175,6 +178,39 @@ export function revokeAPIKey(id: string): Promise<void> {
   return requestJSON<void>(`/api/v1/api-keys/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
+}
+
+// listWebhooks 获取当前工作空间 Webhook 端点
+export function listWebhooks(): Promise<WebhookEndpointListResponse> {
+  return requestJSON<WebhookEndpointListResponse>('/api/v1/webhooks')
+}
+
+// createWebhook 创建端点并返回只显示一次的签名 Secret
+export function createWebhook(
+  name: string,
+  url: string,
+): Promise<CreateWebhookResponse> {
+  return requestJSON<CreateWebhookResponse>('/api/v1/webhooks', {
+    method: 'POST',
+    body: JSON.stringify({ name, url }),
+  })
+}
+
+// disableWebhook 停用端点并终止待投递任务
+export function disableWebhook(id: string): Promise<void> {
+  return requestJSON<void>(`/api/v1/webhooks/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+// listWebhookDeliveries 获取端点近期投递记录
+export function listWebhookDeliveries(
+  id: string,
+  limit = 20,
+): Promise<WebhookDeliveryListResponse> {
+  return requestJSON<WebhookDeliveryListResponse>(
+    `/api/v1/webhooks/${encodeURIComponent(id)}/deliveries?limit=${limit}`,
+  )
 }
 
 // getQRCode 获取链接二维码图片

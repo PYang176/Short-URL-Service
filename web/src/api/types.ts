@@ -221,6 +221,47 @@ export interface CreateAPIKeyResponse {
   secret: string
 }
 
+// WebhookEndpoint 是工作空间回调端点
+export interface WebhookEndpoint {
+  id: string
+  name: string
+  url: string
+  status: number
+  failure_count: number
+  disabled_at: string | null
+  created_at: string
+}
+
+// WebhookEndpointListResponse 是端点列表响应
+export interface WebhookEndpointListResponse {
+  items: WebhookEndpoint[]
+}
+
+// CreateWebhookResponse 是只返回一次签名 Secret 的创建响应
+export interface CreateWebhookResponse {
+  endpoint: WebhookEndpoint
+  secret: string
+}
+
+// WebhookDelivery 是一次 Outbox 投递记录
+export interface WebhookDelivery {
+  id: number
+  event_id: string
+  event_type: string
+  status: number
+  attempt_count: number
+  next_attempt_at: string
+  response_status: number | null
+  last_error: string
+  delivered_at: string | null
+  created_at: string
+}
+
+// WebhookDeliveryListResponse 是端点近期投递记录
+export interface WebhookDeliveryListResponse {
+  items: WebhookDelivery[]
+}
+
 // ApiErrorPayload 是后端统一错误响应
 export interface ApiErrorPayload {
   error?: {

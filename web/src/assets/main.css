@@ -154,6 +154,7 @@ a {
   border-radius: var(--radius-sm);
   color: #c8ded9;
   text-decoration: none;
+  white-space: nowrap;
   transition:
     background-color 140ms ease,
     color 140ms ease,
@@ -1482,6 +1483,16 @@ h3 {
 
   .primary-nav {
     justify-content: flex-end;
+  }
+
+  .nav-link {
+    gap: 0;
+    padding: 0.55rem 0.4rem;
+    font-size: 0.78rem;
+  }
+
+  .nav-dot {
+    display: none;
   }
 
   .brand-mark {

@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, shallowRef } from 'vue'
 import { createAPIKey, listAPIKeys, revokeAPIKey } from '@/api'
 import { ApiError } from '@/api/http'
 import type { APIKeyRecord, APIKeyScope } from '@/api/types'
+import WebhookPanel from '@/components/WebhookPanel.vue'
 import { formatDateTime } from '@/utils/format'
 
 const scopeOptions: Array<{
@@ -280,6 +281,8 @@ function statusText(key: APIKeyRecord): string {
         </li>
       </ul>
     </section>
+
+    <WebhookPanel />
   </div>
 </template>
 

@@ -119,6 +119,8 @@ jobs:
       REDIS_ADDR: 127.0.0.1:6379
       DOMAIN_VERIFY_MODE: mock
       CUSTOM_DOMAIN_CNAME: links.localhost
+      WEBHOOK_ALLOW_PRIVATE_TARGETS: "true"
+      SHORTURL_WEBHOOK_TARGET_HOST: 127.0.0.1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
