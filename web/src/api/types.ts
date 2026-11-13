@@ -192,6 +192,35 @@ export interface WorkspaceAnalyticsOverview {
   top_links: WorkspaceTopLink[]
 }
 
+// APIKeyScope 是当前后端支持的 API Key 权限
+export type APIKeyScope =
+  | 'links:read'
+  | 'links:write'
+  | 'analytics:read'
+
+// APIKeyRecord 是 API Key 的安全元数据
+export interface APIKeyRecord {
+  id: string
+  name: string
+  prefix: string
+  scopes: APIKeyScope[]
+  last_used_at: string | null
+  expires_at: string | null
+  revoked_at: string | null
+  created_at: string
+}
+
+// APIKeyListResponse 是 API Key 列表响应
+export interface APIKeyListResponse {
+  items: APIKeyRecord[]
+}
+
+// CreateAPIKeyResponse 是只返回一次明文 Secret 的创建响应
+export interface CreateAPIKeyResponse {
+  key: APIKeyRecord
+  secret: string
+}
+
 // ApiErrorPayload 是后端统一错误响应
 export interface ApiErrorPayload {
   error?: {

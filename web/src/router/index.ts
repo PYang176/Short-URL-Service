@@ -57,6 +57,12 @@ const router = createRouter({
           component: () => import('@/views/DomainsView.vue'),
           meta: { requiresAuth: true, title: '自定义域名' },
         },
+        {
+          path: 'developer',
+          name: 'developer',
+          component: () => import('@/views/DeveloperView.vue'),
+          meta: { requiresAuth: true, title: '开发者' },
+        },
       ],
     },
     {

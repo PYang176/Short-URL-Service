@@ -14,6 +14,9 @@ import type {
   TrialLinksResponse,
   UpdateLinkInput,
   WorkspaceAnalyticsOverview,
+  APIKeyListResponse,
+  APIKeyScope,
+  CreateAPIKeyResponse,
 } from './types'
 
 // login 使用邮箱和密码登录
@@ -149,6 +152,29 @@ export function getWorkspaceAnalytics(
   return requestJSON<WorkspaceAnalyticsOverview>(
     `/api/v1/analytics/overview?days=${days}`,
   )
+}
+
+// listAPIKeys 获取当前工作空间的 API Key 元数据
+export function listAPIKeys(): Promise<APIKeyListResponse> {
+  return requestJSON<APIKeyListResponse>('/api/v1/api-keys')
+}
+
+// createAPIKey 创建只显示一次 Secret 的 API Key
+export function createAPIKey(
+  name: string,
+  scopes: APIKeyScope[],
+): Promise<CreateAPIKeyResponse> {
+  return requestJSON<CreateAPIKeyResponse>('/api/v1/api-keys', {
+    method: 'POST',
+    body: JSON.stringify({ name, scopes }),
+  })
+}
+
+// revokeAPIKey 撤销指定 API Key
+export function revokeAPIKey(id: string): Promise<void> {
+  return requestJSON<void>(`/api/v1/api-keys/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
 }
 
 // getQRCode 获取链接二维码图片

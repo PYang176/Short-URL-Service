@@ -76,6 +76,30 @@ def main() -> None:
 
         page.screenshot(path=ARTIFACT_DIR / "dashboard.png", full_page=True)
 
+        page.get_by_role("link", name="开发者").click()
+        page.wait_for_url("**/developer")
+        openapi_response = context.request.get(f"{BASE_URL}/openapi.yaml")
+        assert openapi_response.status == 200, openapi_response.text()
+        assert "openapi: 3.1.0" in openapi_response.text()
+        page.get_by_label("名称", exact=True).fill("浏览器验收 Key")
+        page.get_by_role("button", name="创建 API Key").click()
+        api_key = page.locator(".api-secret-value").inner_text()
+        assert api_key.startswith("sl_live_"), api_key
+        api_key_response = context.request.get(
+            f"{API_URL}/api/v1/analytics/overview?days=7",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        assert api_key_response.status == 200, api_key_response.text()
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.get_by_role("button", name="撤销", exact=True).click()
+        page.locator(".api-key-row .status-pill").get_by_text("已撤销").wait_for()
+        revoked_response = context.request.get(
+            f"{API_URL}/api/v1/analytics/overview?days=7",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        assert revoked_response.status == 401, revoked_response.text()
+        page.screenshot(path=ARTIFACT_DIR / "developer.png", full_page=True)
+
         page.get_by_role("link", name="域名").click()
         page.wait_for_url("**/domains")
         page.get_by_role("textbox", name="域名", exact=True).fill(hostname)

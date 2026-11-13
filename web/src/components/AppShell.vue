@@ -18,6 +18,7 @@ const navigation = [
   { label: '工作台', to: '/dashboard' },
   { label: '短链接', to: '/links' },
   { label: '域名', to: '/domains' },
+  { label: '开发者', to: '/developer' },
 ]
 
 // signOut 清除登录态并返回登录页

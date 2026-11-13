@@ -1,0 +1,215 @@
+openapi: 3.1.0
+info:
+  title: Short URL Service API
+  version: 1.0.0
+  description: |
+    短链接平台 HTTP API。用户接口使用 Bearer Access Token；
+    短链与分析资源还可以使用带作用域的 API Key。
+servers:
+  - url: /
+security:
+  - BearerAuth: []
+tags:
+  - name: Trial
+  - name: Links
+  - name: Analytics
+  - name: API Keys
+paths:
+  /api/v1/trial/links:
+    get:
+      tags: [Trial]
+      summary: 读取当前游客 Cookie 下的试用短链
+      security: []
+      responses:
+        "200":
+          description: 游客链接与剩余额度
+    post:
+      tags: [Trial]
+      summary: 无需登录创建短期短链
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTrialLinkRequest"
+      responses:
+        "201":
+          description: 试用短链已创建
+        "429":
+          description: 达到链接或请求额度
+  /api/v1/trial/claim:
+    post:
+      tags: [Trial]
+      summary: 注册后将游客短链认领到当前工作空间
+      responses:
+        "200":
+          description: 认领结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialClaimResponse"
+  /api/v1/links:
+    get:
+      tags: [Links]
+      summary: 查询工作空间短链
+      security:
+        - BearerAuth: []
+        - APIKeyAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 链接列表
+    post:
+      tags: [Links]
+      summary: 创建短链
+      security:
+        - BearerAuth: []
+        - APIKeyAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLinkRequest"
+      responses:
+        "201":
+          description: 链接已创建
+        "409":
+          description: 短码冲突或幂等键内容不一致
+  /api/v1/analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: 查询工作空间整体分析
+      security:
+        - BearerAuth: []
+        - APIKeyAuth: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+      responses:
+        "200":
+          description: 工作空间总量、趋势和热门链接
+  /api/v1/api-keys:
+    get:
+      tags: [API Keys]
+      summary: 查询当前工作空间 API Key
+      responses:
+        "200":
+          description: API Key 元数据列表
+    post:
+      tags: [API Keys]
+      summary: 创建 API Key，明文 Secret 只返回一次
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequest"
+      responses:
+        "201":
+          description: API Key 与只显示一次的 Secret
+  /api/v1/api-keys/{id}:
+    delete:
+      tags: [API Keys]
+      summary: 撤销 API Key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: 已撤销
+        "404":
+          description: API Key 不存在
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    APIKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    CreateTrialLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [destination_url]
+      properties:
+        destination_url:
+          type: string
+          format: uri
+        alias:
+          type: string
+        title:
+          type: string
+    TrialClaimResponse:
+      type: object
+      required: [claimed_links, claimed_clicks]
+      properties:
+        claimed_links:
+          type: integer
+        claimed_clicks:
+          type: integer
+    CreateLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [destination_url]
+      properties:
+        destination_url:
+          type: string
+          format: uri
+        alias:
+          type: string
+        title:
+          type: string
+        redirect_code:
+          type: integer
+          enum: [301, 302]
+    CreateAPIKeyRequest:
+      type: object
+      additionalProperties: false
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - links:read
+              - links:write
+              - analytics:read
+        expires_at:
+          type: string
+          format: date-time
