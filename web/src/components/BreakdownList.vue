@@ -19,6 +19,18 @@ const displayEmptyText = computed(() => props.emptyText ?? '暂无数据')
 function barWidth(clicks: number): string {
   return `${Math.max(4, (clicks / maxClicks.value) * 100)}%`
 }
+
+// displayValue 将常见内部枚举转换为面向用户的简短文案。
+function displayValue(value: string): string {
+  const labels: Record<string, string> = {
+    desktop: '桌面设备',
+    mobile: '手机',
+    tablet: '平板',
+    unknown: '未知',
+    direct: '直接访问',
+  }
+  return labels[value] ?? value
+}
 </script>
 
 <template>
@@ -28,7 +40,7 @@ function barWidth(clicks: number): string {
     <ol v-else class="breakdown-list">
       <li v-for="item in items" :key="item.value" class="breakdown-item">
         <div class="breakdown-meta">
-          <span>{{ item.value }}</span>
+          <span>{{ displayValue(item.value) }}</span>
           <strong>{{ item.clicks }}</strong>
         </div>
         <div class="breakdown-track" aria-hidden="true">

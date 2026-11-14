@@ -107,11 +107,11 @@ watch(() => route.query.create, (value) => void handleCreateIntent(value), {
         <small>{{ overview?.summary.active_links ?? 0 }} 条当前可用</small>
       </article>
       <article class="dashboard-stat-card">
-        <span>{{ overviewDays }} 天累计点击</span>
+        <span>{{ overviewDays }} 天累计访问</span>
         <strong>
           {{ overviewLoading ? '—' : formatCompactNumber(overview?.summary.total_clicks ?? 0) }}
         </strong>
-        <small>包含疑似机器人访问</small>
+        <small>包含自动访问</small>
       </article>
       <article class="dashboard-stat-card">
         <span>独立访客</span>
@@ -193,8 +193,8 @@ watch(() => route.query.create, (value) => void handleCreateIntent(value), {
         <section class="panel overview-trend-panel">
           <div class="section-heading-row">
             <div>
-              <h3>整体点击趋势</h3>
-              <p>聚合当前工作空间的全部短链点击。</p>
+              <h3>整体访问趋势</h3>
+              <p>聚合当前工作空间的全部短链访问。</p>
             </div>
           </div>
 
@@ -208,7 +208,7 @@ watch(() => route.query.create, (value) => void handleCreateIntent(value), {
             </button>
           </div>
           <p v-else-if="!trendPoints.length" class="quiet-state">
-            当前范围内还没有点击记录。
+            当前范围内还没有访问记录。
           </p>
           <TrendChart v-else :points="trendPoints" />
         </section>
@@ -217,7 +217,7 @@ watch(() => route.query.create, (value) => void handleCreateIntent(value), {
           <div class="section-heading-row">
             <div>
               <h3>热门短链</h3>
-              <p>按当前时间范围内的点击量排序。</p>
+              <p>按当前时间范围内的访问量排序。</p>
             </div>
           </div>
 

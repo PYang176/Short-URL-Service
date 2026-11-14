@@ -43,10 +43,10 @@ async function download(): Promise<void> {
     anchor.download = `shorturl-${scope}-${date}.csv`
     anchor.click()
     URL.revokeObjectURL(url)
-    notice.value = '点击明细已导出'
+    notice.value = '访问明细已导出'
   } catch (error) {
     errorMessage.value =
-      error instanceof ApiError ? error.message : '导出点击明细失败'
+      error instanceof ApiError ? error.message : '导出访问明细失败'
   } finally {
     exporting.value = false
   }
@@ -77,8 +77,8 @@ async function download(): Promise<void> {
         <span>访问类型</span>
         <select v-model="filter.visitor">
           <option value="all">全部访问</option>
-          <option value="human">仅真人</option>
-          <option value="bot">仅机器人</option>
+          <option value="human">仅常规访问</option>
+          <option value="bot">仅自动访问</option>
         </select>
       </label>
       <label class="field">

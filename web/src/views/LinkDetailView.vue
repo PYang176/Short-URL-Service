@@ -23,7 +23,7 @@ const qrURL = shallowRef('')
 const qrBlob = shallowRef<Blob | null>(null)
 const notice = shallowRef('')
 
-const humanRate = computed(() => {
+const regularRate = computed(() => {
   const summary = analytics.value?.summary
   if (!summary || summary.total_clicks === 0) {
     return 0
@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
             </span>
             <code>/{{ link.slug }}</code>
           </div>
-          <h1>{{ link.title || '未命名短链接' }}</h1>
+          <h1>{{ link.title || `/${link.slug}` }}</h1>
           <a :href="link.destination_url" target="_blank" rel="noreferrer" class="destination-link">
             {{ link.destination_url }}
           </a>
@@ -174,24 +174,24 @@ onBeforeUnmount(() => {
 
       <section class="detail-summary">
         <div class="summary-primary">
-          <span>总点击</span>
+          <span>总访问</span>
           <strong>{{ formatCompactNumber(analytics?.summary.total_clicks ?? 0) }}</strong>
           <small>{{ days }} 天范围</small>
         </div>
         <div class="summary-cell">
-          <span>未命中 UA 规则</span>
+          <span>常规访问</span>
           <strong>{{ formatCompactNumber(analytics?.summary.human_clicks ?? 0) }}</strong>
-          <small>占 {{ humanRate }}%</small>
+          <small>占 {{ regularRate }}%</small>
         </div>
         <div class="summary-cell">
-          <span>疑似机器人</span>
+          <span>自动访问</span>
           <strong>{{ formatCompactNumber(analytics?.summary.bot_clicks ?? 0) }}</strong>
-          <small>仅按 UA 子串规则判断</small>
+          <small>搜索、监控与脚本流量</small>
         </div>
         <div class="summary-cell">
           <span>独立访客</span>
           <strong>{{ formatCompactNumber(analytics?.summary.unique_visitors ?? 0) }}</strong>
-          <small>同一访客哈希去重</small>
+          <small>同一访客只计一次</small>
         </div>
       </section>
 
@@ -199,8 +199,8 @@ onBeforeUnmount(() => {
         <section class="panel trend-panel">
           <div class="section-heading-row">
             <div>
-              <h2>点击趋势</h2>
-              <p>点击从 Redis Stream 异步写入 MySQL。</p>
+              <h2>访问趋势</h2>
+              <p>查看当前时间范围内的访问变化。</p>
             </div>
             <label class="compact-field">
               <span>范围</span>
@@ -216,7 +216,7 @@ onBeforeUnmount(() => {
             正在刷新分析…
           </div>
           <p v-else-if="!analytics?.trend.length" class="quiet-state">
-            还没有点击记录。打开一次短链后再回来查看。
+            还没有访问记录。打开一次短链后再回来查看。
           </p>
           <TrendChart v-else :points="analytics.trend" />
         </section>
@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
         </aside>
       </div>
 
-      <section class="analytics-grid" aria-label="点击维度分布">
+      <section class="analytics-grid" aria-label="访问维度分布">
         <BreakdownList title="设备" :items="analytics?.devices ?? []" />
         <BreakdownList title="浏览器" :items="analytics?.browsers ?? []" />
         <BreakdownList title="操作系统" :items="analytics?.operating_systems ?? []" />

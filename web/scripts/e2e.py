@@ -94,7 +94,7 @@ def main() -> None:
         quick_create.get_by_label("自定义短码").fill(alias)
         quick_create.get_by_role("button", name="生成短链接").click()
         page.locator(".dashboard-link-list").get_by_text(f"/{alias}").wait_for()
-        page.get_by_text("整体点击趋势").wait_for()
+        page.get_by_text("整体访问趋势").wait_for()
         page.screenshot(path=ARTIFACT_DIR / "dashboard-desktop.png", full_page=True)
 
         access_token = page.evaluate(

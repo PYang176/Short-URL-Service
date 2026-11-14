@@ -67,15 +67,20 @@ function pointY(value: number): number {
 </script>
 
 <template>
-  <svg
-    class="trend-chart"
-    :viewBox="`0 0 ${width} ${height}`"
-    role="img"
-    :aria-label="`点击趋势，共 ${points.length} 个时间点`"
-  >
-    <title>短链点击趋势</title>
-    <desc>实线表示未命中 User-Agent 规则的点击，虚线表示疑似机器人点击。</desc>
-    <g aria-hidden="true">
+  <div class="trend-chart-wrap">
+    <div class="chart-legend" aria-hidden="true">
+      <span><i class="legend-line is-regular" />常规访问</span>
+      <span><i class="legend-line is-automatic" />自动访问</span>
+    </div>
+    <svg
+      class="trend-chart"
+      :viewBox="`0 0 ${width} ${height}`"
+      role="img"
+      :aria-label="`访问趋势，共 ${points.length} 个时间点`"
+    >
+      <title>短链访问趋势</title>
+      <desc>实线表示常规访问，虚线表示自动访问。</desc>
+      <g aria-hidden="true">
       <line
         v-for="line in gridLines"
         :key="line.value"
@@ -142,6 +147,40 @@ function pointY(value: number): number {
         r="3"
         fill="#c26848"
       />
-    </g>
-  </svg>
+      </g>
+    </svg>
+  </div>
 </template>
+
+<style scoped>
+.trend-chart-wrap {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.chart-legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.85rem;
+  padding-top: 0.55rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.legend-line {
+  width: 1.25rem;
+  height: 0;
+  border-top: 2px solid var(--accent);
+}
+
+.legend-line.is-automatic {
+  border-top-style: dashed;
+  border-top-color: var(--warning);
+}
+</style>
