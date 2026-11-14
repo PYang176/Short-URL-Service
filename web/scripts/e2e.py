@@ -33,6 +33,7 @@ def main() -> None:
     test_ip = f"198.51.100.{1 + int(suffix[:2], 16) % 250}"
     trial_alias = f"trial{suffix}"
     alias = f"web{suffix}"
+    bulk_alias = f"bulk{suffix}"
     console_errors: list[str] = []
 
     with sync_playwright() as playwright:
@@ -179,6 +180,32 @@ def main() -> None:
         edit_dialog.get_by_label("目标地址").fill("https://example.com/changed")
         edit_dialog.get_by_role("button", name="保存修改").click()
         page.get_by_text("https://example.com/changed").wait_for()
+
+        page.locator(".primary-nav").get_by_role(
+            "link",
+            name="短链接",
+            exact=True,
+        ).click()
+        page.wait_for_url("**/links")
+        page.get_by_role("button", name="批量导入").click()
+        bulk_panel = page.locator(".bulk-import-panel")
+        bulk_panel.get_by_role("heading", name="CSV 批量创建").wait_for()
+        bulk_csv = ARTIFACT_DIR / "bulk-import.csv"
+        bulk_csv.write_text(
+            "destination_url,alias,title,notes,redirect_code,starts_at,expires_at\n"
+            f"https://example.com/bulk,{bulk_alias},批量导入成功,,302,,\n"
+            "file:///etc/passwd,bulkbad,批量导入失败,,302,,\n",
+            encoding="utf-8-sig",
+        )
+        bulk_panel.locator('input[type="file"]').set_input_files(str(bulk_csv))
+        bulk_panel.get_by_role("button", name="开始导入").click()
+        bulk_panel.get_by_role("heading", name="批次结果").wait_for()
+        bulk_panel.get_by_text("成功 1").wait_for()
+        bulk_panel.get_by_text("失败 1").wait_for()
+        page.screenshot(
+            path=ARTIFACT_DIR / "bulk-import-result.png",
+            full_page=True,
+        )
 
         mobile = context.new_page()
         mobile.set_viewport_size({"width": 390, "height": 844})

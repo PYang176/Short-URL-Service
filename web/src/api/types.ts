@@ -77,6 +77,24 @@ export interface LinkListResponse {
   next_cursor: string
 }
 
+// BulkCreateItem 是 CSV 单行创建结果
+export interface BulkCreateItem {
+  row: number
+  status: 'created' | 'failed'
+  link?: Link
+  error_code?: string
+  error_message?: string
+}
+
+// BulkCreateResponse 是同步 CSV 批次的逐行结果
+export interface BulkCreateResponse {
+  batch_id: string
+  total: number
+  succeeded: number
+  failed: number
+  items: BulkCreateItem[]
+}
+
 // CreateLinkInput 是创建短链表单提交的数据
 export interface CreateLinkInput {
   destination_url: string

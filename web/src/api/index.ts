@@ -3,6 +3,7 @@ import type {
   AnalyticsOverview,
   AnalyticsExportFilter,
   AuthResponse,
+  BulkCreateResponse,
   CreateLinkInput,
   Domain,
   DomainListResponse,
@@ -101,6 +102,20 @@ export function createLink(
     method: 'POST',
     headers,
     body: JSON.stringify(input),
+  })
+}
+
+// bulkCreateLinks 上传 CSV 并返回逐行创建结果
+export function bulkCreateLinks(
+  file: File,
+  idempotencyKey: string,
+): Promise<BulkCreateResponse> {
+  const body = new FormData()
+  body.append('file', file, file.name)
+  return requestJSON<BulkCreateResponse>('/api/v1/links/bulk', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body,
   })
 }
 

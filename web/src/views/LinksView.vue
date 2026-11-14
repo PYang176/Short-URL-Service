@@ -5,6 +5,7 @@ import { RouterLink } from 'vue-router'
 import { deleteLink } from '@/api'
 import { ApiError } from '@/api/http'
 import type { Link } from '@/api/types'
+import BulkImportPanel from '@/components/BulkImportPanel.vue'
 import LinkFormDialog from '@/components/LinkFormDialog.vue'
 import { useLinks } from '@/composables/useLinks'
 import {
@@ -28,6 +29,7 @@ const {
 const query = shallowRef('')
 const statusFilter = shallowRef('all')
 const createOpen = shallowRef(false)
+const bulkOpen = shallowRef(false)
 const editingLink = shallowRef<Link | null>(null)
 const notice = shallowRef('')
 
@@ -89,6 +91,12 @@ async function handleCreated(): Promise<void> {
   createOpen.value = false
   await load()
 }
+
+// handleBulkImported 在批量成功写入后刷新链接列表
+async function handleBulkImported(count: number): Promise<void> {
+  notice.value = `批量导入成功创建 ${count} 条短链`
+  await load()
+}
 </script>
 
 <template>
@@ -99,10 +107,17 @@ async function handleCreated(): Promise<void> {
         <h1>短链接</h1>
         <p>管理目标地址、短码、过期时间和跳转状态。</p>
       </div>
-      <button class="primary-button" type="button" @click="createOpen = true">
-        创建短链接
-      </button>
+      <div class="detail-actions">
+        <button class="secondary-button" type="button" @click="bulkOpen = !bulkOpen">
+          {{ bulkOpen ? '收起批量导入' : '批量导入' }}
+        </button>
+        <button class="primary-button" type="button" @click="createOpen = true">
+          创建短链接
+        </button>
+      </div>
     </header>
+
+    <BulkImportPanel v-if="bulkOpen" @imported="handleBulkImported" />
 
     <section class="panel link-panel">
       <div class="toolbar">
