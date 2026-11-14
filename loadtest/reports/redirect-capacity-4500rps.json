@@ -1,0 +1,230 @@
+{
+    "metrics": {
+        "http_req_receiving": {
+            "avg": 0.06548193154229759,
+            "min": 0.01536,
+            "med": 0.050348,
+            "max": 4.192644,
+            "p(90)": 0.099454,
+            "p(95)": 0.133309,
+            "p(99)": 0.26534960000000063
+        },
+        "http_req_sending": {
+            "max": 6.053296,
+            "p(90)": 0.055187,
+            "p(95)": 0.088918,
+            "p(99)": 0.18949160000000026,
+            "avg": 0.027796758232360896,
+            "min": 0.004779,
+            "med": 0.012184
+        },
+        "checks": {
+            "passes": 90000,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "iterations": {
+            "count": 90000,
+            "rate": 4371.2911639873555
+        },
+        "data_received": {
+            "count": 39084953,
+            "rate": 1898352.3299306787
+        },
+        "http_reqs": {
+            "rate": 4373.282529962061,
+            "count": 90041
+        },
+        "vus_max": {
+            "max": 500,
+            "value": 500,
+            "min": 500
+        },
+        "http_req_waiting": {
+            "min": 0,
+            "med": 0.952839,
+            "max": 128.656014,
+            "p(90)": 1.50691,
+            "p(95)": 1.965086,
+            "p(99)": 6.026110000000002,
+            "avg": 1.1853811263091263
+        },
+        "data_sent": {
+            "count": 9330307,
+            "rate": 453172.0949598819
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 1.278659816083768,
+            "min": 0.065227,
+            "med": 1.041979,
+            "max": 128.906792,
+            "p(90)": 1.61227,
+            "p(95)": 2.090982,
+            "p(99)": 6.228144800000074
+        },
+        "http_req_tls_handshaking": {
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_failed": {
+            "fails": 90041,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_connecting": {
+            "avg": 0.011684738663497727,
+            "min": 0,
+            "med": 0,
+            "max": 42.622436,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
+        },
+        "vus": {
+            "min": 4,
+            "max": 11,
+            "value": 5
+        },
+        "http_req_duration": {
+            "min": 0.065227,
+            "med": 1.041979,
+            "max": 128.906792,
+            "p(90)": 1.61227,
+            "p(95)": 2.090982,
+            "p(99)": 6.228144800000074,
+            "avg": 1.278659816083768,
+            "thresholds": {
+                "p(95)<50": false,
+                "p(99)<100": false
+            }
+        },
+        "iteration_duration": {
+            "p(99)": 6.771800879999982,
+            "avg": 1.4170272463666451,
+            "min": 0.546875,
+            "med": 1.1631895,
+            "max": 49.047738,
+            "p(90)": 1.7547882000000001,
+            "p(95)": 2.2582332000000007
+        },
+        "http_req_blocked": {
+            "p(99)": 0.040679,
+            "avg": 0.02200852533845865,
+            "min": 0.001704,
+            "med": 0.004749,
+            "max": 42.671431,
+            "p(90)": 0.006122,
+            "p(95)": 0.006944
+        }
+    },
+    "setup_data": {
+        "links": [
+            {
+                "id": "01M7DMHDEWYSFKZPSQWSVS86SW",
+                "slug": "load179468033774636150"
+            },
+            {
+                "id": "01M7DMHDFCACWRJA3TA1E4N9B6",
+                "slug": "load179468033774636151"
+            },
+            {
+                "id": "01M7DMHDFX4G39WTHPHQ2N2HAZ",
+                "slug": "load179468033774636152"
+            },
+            {
+                "id": "01M7DMHDGFBH9DHK4KB8X1K4HR",
+                "slug": "load179468033774636153"
+            },
+            {
+                "id": "01M7DMHDH0HB7E1NRBAEGHRQ28",
+                "slug": "load179468033774636154"
+            },
+            {
+                "id": "01M7DMHDHHXG0X1C6A287JGVAK",
+                "slug": "load179468033774636155"
+            },
+            {
+                "id": "01M7DMHDJ2G92Y7XE28C9N94WN",
+                "slug": "load179468033774636156"
+            },
+            {
+                "id": "01M7DMHDJMWAQJH1X0RKGKJJVS",
+                "slug": "load179468033774636157"
+            },
+            {
+                "id": "01M7DMHDK52CKMQFAYA1NHHDWY",
+                "slug": "load179468033774636158"
+            },
+            {
+                "id": "01M7DMHDKQ5W3X2HJ38W9NQ14P",
+                "slug": "load179468033774636159"
+            },
+            {
+                "id": "01M7DMHDM7KRZ6PSJ65W1M6JNY",
+                "slug": "load1794680337746361510"
+            },
+            {
+                "id": "01M7DMHDMSN87XE66K4ZZA2K6N",
+                "slug": "load1794680337746361511"
+            },
+            {
+                "id": "01M7DMHDNBJWVXV0HTY6DD22C3",
+                "slug": "load1794680337746361512"
+            },
+            {
+                "id": "01M7DMHDNX8W5XNEB1FRJ67SC8",
+                "slug": "load1794680337746361513"
+            },
+            {
+                "id": "01M7DMHDPJEF8QVZ8X5AVBYRGM",
+                "slug": "load1794680337746361514"
+            },
+            {
+                "slug": "load1794680337746361515",
+                "id": "01M7DMHDQ57F86TV9RPKHW28WF"
+            },
+            {
+                "id": "01M7DMHDQQKFH8ER51P6KW4YCX",
+                "slug": "load1794680337746361516"
+            },
+            {
+                "id": "01M7DMHDR9H0W5V8PZAGRFPQ2E",
+                "slug": "load1794680337746361517"
+            },
+            {
+                "id": "01M7DMHDRX81WJ0Z3QBDWJ4DPN",
+                "slug": "load1794680337746361518"
+            },
+            {
+                "id": "01M7DMHDSG5DHCBKRCFFMGCMJM",
+                "slug": "load1794680337746361519"
+            }
+        ]
+    },
+    "root_group": {
+        "groups": {},
+        "checks": {
+                "redirect returned 301/302": {
+                    "id": "91b098d17be64d837a705ea755f4958d",
+                    "passes": 90000,
+                    "fails": 0,
+                    "name": "redirect returned 301/302",
+                    "path": "::redirect returned 301/302"
+                }
+            },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+}

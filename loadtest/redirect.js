@@ -5,6 +5,10 @@ const baseURL = __ENV.BASE_URL || "http://127.0.0.1:18080";
 const linkCount = Number(__ENV.LINK_COUNT || 100);
 const rate = Number(__ENV.RATE || 100);
 const duration = __ENV.DURATION || "30s";
+const preAllocatedVUs = Number(
+  __ENV.PRE_ALLOCATED_VUS || Math.max(20, Math.ceil(rate / 10)),
+);
+const maxVUs = Number(__ENV.MAX_VUS || Math.max(100, Math.ceil(rate / 2)));
 
 export const options = {
   scenarios: {
@@ -13,8 +17,8 @@ export const options = {
       rate,
       timeUnit: "1s",
       duration,
-      preAllocatedVUs: Math.max(20, Math.ceil(rate / 10)),
-      maxVUs: Math.max(100, rate * 2),
+      preAllocatedVUs,
+      maxVUs,
     },
   },
   thresholds: {

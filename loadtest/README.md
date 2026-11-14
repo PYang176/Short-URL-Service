@@ -25,6 +25,8 @@ docker run --rm `
   -e LINK_COUNT=100 `
   -e RATE=1000 `
   -e DURATION=30s `
+-e PRE_ALLOCATED_VUS=200 `
+-e MAX_VUS=1000 `
   -v "${PWD}:/scripts" `
   grafana/k6:0.57.0 run `
   --summary-trend-stats "avg,min,med,max,p(90),p(95),p(99)" `
@@ -38,8 +40,9 @@ docker run --rm `
 mysql -u root -p short_url < loadtest\cleanup.sql
 ```
 
-`RATE` 是每秒目标请求数，不是虚拟用户数。建议依次跑 100、500、1000 req/s，
-确认错误率和延迟没有明显恶化后再提高目标。
+`RATE` 是每秒目标请求数，不是虚拟用户数。`PRE_ALLOCATED_VUS` 和 `MAX_VUS`
+用于限制高目标速率下的 k6 虚拟用户数量，避免压测工具自身耗尽内存。建议依次
+提高目标速率，确认错误率、延迟和 `dropped_iterations` 没有明显恶化后继续。
 
 ## 结果口径
 
@@ -55,3 +58,4 @@ JSON 文件。不要只写未经测试的 QPS 数字。
 
 - [500 req/s 基线](./reports/redirect-500rps.md)
 - [收尾阶段 500 req/s 回归](./reports/redirect-closure-500rps.md)
+- [2026-11-15 容量阶梯测试](./reports/redirect-capacity-2026-11-15.md)
