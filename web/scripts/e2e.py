@@ -6,6 +6,7 @@ import csv
 import os
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -57,11 +58,18 @@ def main() -> None:
         page.get_by_label("目标地址").fill("https://example.com/trial")
         page.get_by_label("自定义短码，可选").fill(trial_alias)
         page.get_by_label("标题，可选").fill("免登录试用")
+        page.get_by_label("链接有效期").select_option("15")
         page.get_by_role("button", name="生成试用短链").click()
         page.get_by_role("heading", name="免登录试用").wait_for()
         trial_short_url = page.locator(".trial-result a").inner_text()
         trial_response = context.request.get(trial_short_url, max_redirects=0)
         assert trial_response.status == 302, trial_response.text()
+        trial_links = context.request.get(f"{API_URL}/api/v1/trial/links").json()
+        trial_link = trial_links["items"][0]
+        created_at = datetime.fromisoformat(trial_link["created_at"].replace("Z", "+00:00"))
+        expires_at = datetime.fromisoformat(trial_link["expires_at"].replace("Z", "+00:00"))
+        lifetime = expires_at - created_at
+        assert 14 * 60 <= lifetime.total_seconds() <= 15 * 60 + 5, lifetime
         page.screenshot(path=ARTIFACT_DIR / "trial.png", full_page=True)
 
         page.goto(f"{BASE_URL}/register")

@@ -7,7 +7,26 @@ const (
 	WorkspaceKindTrial uint8 = 2
 	// CookieName 是浏览器保存游客原始 Token 的 Cookie 名称
 	CookieName = "shorturl_trial"
+
+	// ExpiryMinutes15 表示 15 分钟试用有效期
+	ExpiryMinutes15 = 15
+	// ExpiryMinutes30 表示 30 分钟试用有效期
+	ExpiryMinutes30 = 30
+	// ExpiryMinutes60 表示 1 小时试用有效期
+	ExpiryMinutes60 = 60
+	// ExpiryMinutes720 表示 12 小时试用有效期
+	ExpiryMinutes720 = 720
+	// ExpiryMinutes1440 表示 24 小时试用有效期
+	ExpiryMinutes1440 = 1440
 )
+
+var trialExpiryDurations = map[int]time.Duration{
+	ExpiryMinutes15:   15 * time.Minute,
+	ExpiryMinutes30:   30 * time.Minute,
+	ExpiryMinutes60:   time.Hour,
+	ExpiryMinutes720:  12 * time.Hour,
+	ExpiryMinutes1440: 24 * time.Hour,
+}
 
 // Session 是游客 Cookie 对应的服务端会话状态
 type Session struct {

@@ -38,6 +38,8 @@ type createLinkRequest struct {
 	Alias string `json:"alias"`
 	// Title 是可选链接标题
 	Title string `json:"title"`
+	// ExpiresInMinutes 是 15、30、60、720 或 1440 分钟
+	ExpiresInMinutes int `json:"expires_in_minutes"`
 }
 
 type trialLinkResponse struct {
@@ -101,6 +103,25 @@ func (h *Handler) Create(c *gin.Context) {
 		h.writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
 		return
 	}
+	expiryMinutes := request.ExpiresInMinutes
+	if expiryMinutes == 0 {
+		expiryMinutes = ExpiryMinutes1440
+	}
+	expiresAt, err := h.sessions.LinkExpiresAt(session, expiryMinutes)
+	if err != nil {
+		if errors.Is(err, ErrInvalidExpiry) {
+			h.writeError(
+				c,
+				http.StatusBadRequest,
+				"INVALID_TRIAL_EXPIRY",
+				"有效期必须是 15、30、60、720 或 1440 分钟",
+			)
+			return
+		}
+		h.logger.Error("计算试用链接有效期失败", "error", err)
+		h.writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
 	if err := h.sessions.ReserveLink(c.Request.Context(), session.ID); err != nil {
 		if errors.Is(err, ErrLinkLimitReached) {
 			h.writeError(c, http.StatusTooManyRequests, "TRIAL_LINK_LIMIT_REACHED", "本次试用已创建全部短链")
@@ -111,7 +132,6 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	expiresAt := session.ExpiresAt
 	result, err := h.links.Create(c.Request.Context(), session.WorkspaceID, link.CreateInput{
 		DestinationURL: request.DestinationURL,
 		Alias:          request.Alias,

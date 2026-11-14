@@ -130,6 +130,19 @@ func (s *Service) SessionTTL() time.Duration {
 	return s.sessionTTL
 }
 
+// LinkExpiresAt 校验有效期选项并限制在游客会话剩余时间内
+func (s *Service) LinkExpiresAt(session *Session, minutes int) (time.Time, error) {
+	duration, ok := trialExpiryDurations[minutes]
+	if !ok {
+		return time.Time{}, ErrInvalidExpiry
+	}
+	expiresAt := s.now().Add(duration)
+	if expiresAt.After(session.ExpiresAt) {
+		expiresAt = session.ExpiresAt
+	}
+	return expiresAt, nil
+}
+
 // Claim 将当前 Cookie 游客会话中的链接和点击迁移到登录工作空间
 func (s *Service) Claim(
 	ctx context.Context,

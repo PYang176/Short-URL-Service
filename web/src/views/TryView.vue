@@ -11,6 +11,7 @@ const form = reactive({
   destinationURL: '',
   alias: '',
   title: '',
+  expiryMinutes: 1440 as 15 | 30 | 60 | 720 | 1440,
 })
 const links = shallowRef<TrialLink[]>([])
 const latestLink = shallowRef<TrialLink | null>(null)
@@ -54,6 +55,7 @@ async function submit(): Promise<void> {
       destination_url: form.destinationURL.trim(),
       alias: form.alias.trim() || undefined,
       title: form.title.trim() || undefined,
+      expires_in_minutes: form.expiryMinutes,
     })
     latestLink.value = created
     form.destinationURL = ''
@@ -101,7 +103,7 @@ onMounted(loadTrialLinks)
         <h1 id="trial-title">先做一条能用的短链。</h1>
         <p>
           不需要注册。当前浏览器会获得一个独立游客会话，最多创建 3 条
-          24 小时后自动失效的短链。
+          短期短链，每条链接可选择 15 分钟至 24 小时的有效期。
         </p>
       </div>
 
@@ -171,6 +173,17 @@ onMounted(loadTrialLinks)
             />
           </label>
         </div>
+
+        <label class="field trial-expiry-field">
+          <span>链接有效期</span>
+          <select v-model="form.expiryMinutes" :disabled="exhausted">
+            <option :value="15">15 分钟</option>
+            <option :value="30">30 分钟</option>
+            <option :value="60">1 小时</option>
+            <option :value="720">12 小时</option>
+            <option :value="1440">24 小时</option>
+          </select>
+        </label>
 
         <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
         <p v-if="notice" class="inline-notice" role="status">{{ notice }}</p>
@@ -376,6 +389,10 @@ onMounted(loadTrialLinks)
   display: grid;
   grid-template-columns: 1fr 1.4fr;
   gap: 1rem;
+}
+
+.trial-expiry-field {
+  max-width: 18rem;
 }
 
 .trial-form .primary-button {

@@ -105,6 +105,7 @@ export interface TrialCreateInput {
   destination_url: string
   alias?: string
   title?: string
+  expires_in_minutes: 15 | 30 | 60 | 720 | 1440
 }
 
 // TrialLink 是游客会话创建的短期短链

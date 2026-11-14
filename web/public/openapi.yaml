@@ -473,6 +473,11 @@ components:
           type: string
         title:
           type: string
+        expires_in_minutes:
+          type: integer
+          enum: [15, 30, 60, 720, 1440]
+          default: 1440
+          description: 实际失效时间不会超过游客会话剩余有效期。
     TrialClaimResponse:
       type: object
       required: [claimed_links, claimed_clicks]

@@ -85,6 +85,26 @@ func TestServiceEnforcesLinkQuota(t *testing.T) {
 	}
 }
 
+// TestServiceLinkExpiryOptions 验证有效期白名单并与游客会话上限取较小值
+func TestServiceLinkExpiryOptions(t *testing.T) {
+	now := time.Date(2026, 11, 14, 8, 0, 0, 0, time.UTC)
+	service := NewService(newFakeRepository(), 24*time.Hour, 3)
+	service.now = func() time.Time { return now }
+	session := &Session{ExpiresAt: now.Add(2 * time.Hour)}
+
+	expiresAt, err := service.LinkExpiresAt(session, ExpiryMinutes15)
+	if err != nil || !expiresAt.Equal(now.Add(15*time.Minute)) {
+		t.Fatalf("15 分钟有效期 = %v, %v", expiresAt, err)
+	}
+	expiresAt, err = service.LinkExpiresAt(session, ExpiryMinutes720)
+	if err != nil || !expiresAt.Equal(session.ExpiresAt) {
+		t.Fatalf("12 小时有效期应受会话上限约束: %v, %v", expiresAt, err)
+	}
+	if _, err := service.LinkExpiresAt(session, 45); !errors.Is(err, ErrInvalidExpiry) {
+		t.Fatalf("非法有效期 error = %v", err)
+	}
+}
+
 // TestServiceClaim 验证游客 Token 能认领到登录工作空间并只消费一次
 func TestServiceClaim(t *testing.T) {
 	now := time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)
