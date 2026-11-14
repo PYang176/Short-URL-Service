@@ -67,6 +67,48 @@ func TestServiceCreateResolveAndInvalidate(t *testing.T) {
 	}
 }
 
+// TestDeleteCacheRetriesTransientRedisFailure 验证 Redis 短暂重启后仍能完成缓存失效。
+func TestDeleteCacheRetriesTransientRedisFailure(t *testing.T) {
+	server := miniredis.NewMiniRedis()
+	if err := server.Start(); err != nil {
+		t.Fatalf("启动 miniredis 失败: %v", err)
+	}
+	t.Cleanup(server.Close)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("关闭 Redis 失败: %v", err)
+		}
+	})
+
+	key := linkCacheKey("domain-1", "retry")
+	if err := client.Set(t.Context(), key, "cached", time.Minute).Err(); err != nil {
+		t.Fatalf("写入测试缓存失败: %v", err)
+	}
+	server.Close()
+	restarted := make(chan error, 1)
+	go func() {
+		time.Sleep(75 * time.Millisecond)
+		restarted <- server.Restart()
+	}()
+
+	service := &Service{
+		redis:  client,
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	service.deleteCache(t.Context(), "domain-1", "retry")
+	if err := <-restarted; err != nil {
+		t.Fatalf("重启 miniredis 失败: %v", err)
+	}
+	exists, err := client.Exists(t.Context(), key).Result()
+	if err != nil {
+		t.Fatalf("检查缓存失败: %v", err)
+	}
+	if exists != 0 {
+		t.Fatal("Redis 恢复后缓存仍然存在")
+	}
+}
+
 // TestServiceEmitsOutboxEvents 验证创建、修改和删除都会生成对应 Webhook 事件
 func TestServiceEmitsOutboxEvents(t *testing.T) {
 	service, repo, cleanup := testService(t)

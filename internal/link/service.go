@@ -174,6 +174,7 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateIn
 			DestinationHash: destinationHash[:],
 			Title:           title,
 			Notes:           notes,
+			IdempotencyKey:  strings.TrimSpace(input.IdempotencyKey),
 			Status:          StatusActive,
 			RedirectCode:    redirectCode,
 			StartsAt:        startsAt,
@@ -465,9 +466,32 @@ func (s *Service) setNullCache(ctx context.Context, key string) {
 
 // deleteCache 删除更新或删除链接对应的缓存
 func (s *Service) deleteCache(ctx context.Context, domainID, slug string) {
-	if err := s.redis.Del(ctx, linkCacheKey(domainID, slug)).Err(); err != nil {
-		s.logger.Warn("删除链接缓存失败", "error", err)
+	// 数据库提交后不再跟随客户端取消，给缓存失效一个独立且有限的重试窗口。
+
+	invalidCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	key := linkCacheKey(domainID, slug)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := s.redis.Del(invalidCtx, key).Err(); err != nil {
+			lastErr = err
+		} else {
+			return
+		}
+		if attempt == 2 {
+			break
+		}
+		delay := time.Duration(50*(1<<attempt)) * time.Millisecond
+		timer := time.NewTimer(delay)
+		select {
+		case <-invalidCtx.Done():
+			timer.Stop()
+			lastErr = invalidCtx.Err()
+			attempt = 2
+		case <-timer.C:
+		}
 	}
+	s.logger.Warn("删除链接缓存失败", "error", lastErr)
 }
 
 // linkCacheKey 生成域名和短码的跳转缓存 Key

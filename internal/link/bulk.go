@@ -2,7 +2,9 @@ package link
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -74,10 +76,15 @@ func (s *Service) BulkCreate(
 	ctx context.Context,
 	workspaceID string,
 	reader io.Reader,
+	idempotencyKeys ...string,
 ) (*BulkCreateResult, error) {
 	header, rows, err := parseBulkCSV(reader)
 	if err != nil {
 		return nil, err
+	}
+	batchKey := ""
+	if len(idempotencyKeys) > 0 {
+		batchKey = strings.TrimSpace(idempotencyKeys[0])
 	}
 
 	result := &BulkCreateResult{
@@ -89,7 +96,7 @@ func (s *Service) BulkCreate(
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		item := s.createBulkRow(ctx, workspaceID, header, raw)
+		item := s.createBulkRow(ctx, workspaceID, header, raw, batchKey)
 		if item.Status == "created" {
 			result.Succeeded++
 		} else {
@@ -106,6 +113,7 @@ func (s *Service) createBulkRow(
 	workspaceID string,
 	header map[string]int,
 	raw bulkRawRow,
+	batchKey string,
 ) BulkCreateItem {
 	item := BulkCreateItem{Row: raw.row, Status: "failed"}
 	if len(raw.values) != len(header) {
@@ -152,6 +160,7 @@ func (s *Service) createBulkRow(
 		RedirectCode:   redirectCode,
 		StartsAt:       startsAt,
 		ExpiresAt:      expiresAt,
+		IdempotencyKey: bulkRowIdempotencyKey(batchKey, raw.row),
 	})
 	if err != nil {
 		switch {
@@ -170,6 +179,15 @@ func (s *Service) createBulkRow(
 	item.Status = "created"
 	item.Link = created
 	return item
+}
+
+// bulkRowIdempotencyKey 根据批次幂等键和 CSV 行号生成稳定行级键。
+func bulkRowIdempotencyKey(batchKey string, row int) string {
+	if batchKey == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", batchKey, row)))
+	return hex.EncodeToString(sum[:])
 }
 
 // parseBulkCSV 先完整解析文件结构，文件级错误会阻止任何行写入

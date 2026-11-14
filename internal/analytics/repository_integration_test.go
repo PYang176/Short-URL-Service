@@ -36,33 +36,77 @@ func TestMySQLRepositoryAnalytics(t *testing.T) {
 		t.Fatalf("连接 MySQL 失败: %v", err)
 	}
 
+	userID := ulid.Make().String()
 	workspaceID := ulid.Make().String()
 	linkID := ulid.Make().String()
 	baseTime := time.Date(2026, 11, 12, 10, 5, 0, 0, time.UTC)
+	if _, err := db.ExecContext(t.Context(), `
+		INSERT INTO users (id, email, password_hash, display_name, role, status, created_at, updated_at)
+		VALUES (?, ?, 'test-hash', 'Analytics Integration', 1, 1, ?, ?)`,
+		userID, "analytics-"+userID+"@example.com", baseTime, baseTime,
+	); err != nil {
+		t.Fatalf("创建测试用户失败: %v", err)
+	}
+	if _, err := db.ExecContext(t.Context(), `
+		INSERT INTO workspaces (id, kind, name, slug, owner_user_id, created_at, updated_at)
+		VALUES (?, 1, 'Analytics Integration', ?, ?, ?, ?)`,
+		workspaceID, "analytics-"+workspaceID, userID, baseTime, baseTime,
+	); err != nil {
+		t.Fatalf("创建测试工作空间失败: %v", err)
+	}
+	linkRepo := link.NewMySQLRepository(db)
+	domain, err := linkRepo.EnsureDefaultDomain(
+		t.Context(),
+		"analytics-"+workspaceID+".test",
+		baseTime,
+	)
+	if err != nil {
+		t.Fatalf("创建测试域名失败: %v", err)
+	}
+	if err := linkRepo.Create(t.Context(), &link.Link{
+		ID:              linkID,
+		WorkspaceID:     workspaceID,
+		DomainID:        domain.ID,
+		DomainHostname:  domain.Hostname,
+		Slug:            "analytics",
+		DestinationURL:  "https://example.com/analytics",
+		DestinationHash: make([]byte, 32),
+		Status:          link.StatusActive,
+		RedirectCode:    302,
+		Version:         1,
+		CreatedAt:       baseTime,
+		UpdatedAt:       baseTime,
+	}, nil); err != nil {
+		t.Fatalf("创建测试链接失败: %v", err)
+	}
 	visitorOne := sha256.Sum256([]byte("visitor-one"))
 	visitorTwo := sha256.Sum256([]byte("visitor-two"))
 	events := []Event{
 		{
 			EventID: ulid.Make().String(), WorkspaceID: workspaceID, LinkID: linkID,
-			DomainID: "domain-1", Slug: "analytics", ClickedAt: baseTime,
+			DomainID: domain.ID, Slug: "analytics", ClickedAt: baseTime,
 			VisitorHash: visitorOne[:], Country: "CN", Device: "desktop",
 			OS: "Windows", Browser: "Chrome", IsBot: false,
 		},
 		{
 			EventID: ulid.Make().String(), WorkspaceID: workspaceID, LinkID: linkID,
-			DomainID: "domain-1", Slug: "analytics", ClickedAt: baseTime.Add(5 * time.Minute),
+			DomainID: domain.ID, Slug: "analytics", ClickedAt: baseTime.Add(5 * time.Minute),
 			VisitorHash: visitorOne[:], Country: "US", Device: "mobile",
 			OS: "Android", Browser: "Chrome", IsBot: false,
 		},
 		{
 			EventID: ulid.Make().String(), WorkspaceID: workspaceID, LinkID: linkID,
-			DomainID: "domain-1", Slug: "analytics", ClickedAt: baseTime.Add(10 * time.Minute),
+			DomainID: domain.ID, Slug: "analytics", ClickedAt: baseTime.Add(10 * time.Minute),
 			VisitorHash: visitorTwo[:], Country: "CN", Device: "desktop",
 			OS: "Linux", Browser: "curl", IsBot: true,
 		},
 	}
 	t.Cleanup(func() {
 		_, _ = db.ExecContext(context.Background(), `DELETE FROM click_events WHERE workspace_id = ?`, workspaceID)
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM links WHERE workspace_id = ?`, workspaceID)
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM domains WHERE id = ?`, domain.ID)
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM workspaces WHERE id = ?`, workspaceID)
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM users WHERE id = ?`, userID)
 	})
 
 	repo := NewMySQLRepository(db)
@@ -79,6 +123,22 @@ func TestMySQLRepositoryAnalytics(t *testing.T) {
 	}
 	if inserted != 0 {
 		t.Fatalf("重复写入数量 = %d, want 0", inserted)
+	}
+	orphan := Event{
+		EventID:     ulid.Make().String(),
+		WorkspaceID: workspaceID,
+		LinkID:      ulid.Make().String(),
+		DomainID:    domain.ID,
+		Slug:        "orphan",
+		ClickedAt:   baseTime,
+		VisitorHash: visitorOne[:],
+	}
+	inserted, err = repo.InsertBatch(t.Context(), []Event{orphan})
+	if err != nil {
+		t.Fatalf("孤儿事件 InsertBatch() error = %v", err)
+	}
+	if inserted != 0 {
+		t.Fatalf("孤儿事件写入数量 = %d, want 0", inserted)
 	}
 
 	from := time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)

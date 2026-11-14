@@ -209,6 +209,9 @@ func Load() (Config, error) {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return Config{}, fmt.Errorf("加载 .env 失败: %w", err)
 	}
+	if err := validateEnvValueFormats(); err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		Env:           getEnv("APP_ENV", EnvDevelopment),
@@ -319,6 +322,9 @@ func (c Config) Validate() error {
 	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
 		return fmt.Errorf("PUBLIC_BASE_URL 协议必须是 http 或 https")
 	}
+	if c.Env == EnvProduction && baseURL.Scheme != "https" {
+		return fmt.Errorf("生产环境 PUBLIC_BASE_URL 必须使用 HTTPS")
+	}
 	if strings.TrimSpace(c.HTTP.Addr) == "" {
 		return fmt.Errorf("HTTP_ADDR 不能为空")
 	}
@@ -358,6 +364,9 @@ func (c Config) Validate() error {
 	}
 	if c.Domain.VerifyMode != "mock" && c.Domain.VerifyMode != "dns" {
 		return fmt.Errorf("DOMAIN_VERIFY_MODE 必须是 mock 或 dns")
+	}
+	if c.Env == EnvProduction && c.Domain.VerifyMode != "dns" {
+		return fmt.Errorf("生产环境 DOMAIN_VERIFY_MODE 必须为 dns")
 	}
 	if strings.TrimSpace(c.Domain.CNAME) == "" {
 		return fmt.Errorf("CUSTOM_DOMAIN_CNAME 不能为空")
@@ -414,6 +423,103 @@ func (c Config) Validate() error {
 	} {
 		if rule.Limit <= 0 || rule.Window <= 0 {
 			return fmt.Errorf("限流规则 %s 的参数无效", name)
+		}
+	}
+	return nil
+}
+
+// validateEnvValueFormats 在配置回退默认值前拒绝格式错误的显式环境变量。
+func validateEnvValueFormats() error {
+	intKeys := []string{
+		"MYSQL_MAX_OPEN_CONNS",
+		"MYSQL_MAX_IDLE_CONNS",
+		"REDIS_DB",
+		"REDIS_POOL_SIZE",
+		"REDIS_MIN_IDLE_CONNS",
+		"HTTP_MAX_BODY_BYTES",
+		"HTTP_BULK_MAX_BYTES",
+		"HTTP_MAX_HEADER_BYTES",
+		"TRIAL_LINK_LIMIT",
+		"WEBHOOK_MAX_ATTEMPTS",
+		"RATE_LIMIT_REGISTER_LIMIT",
+		"RATE_LIMIT_LOGIN_LIMIT",
+		"RATE_LIMIT_REFRESH_LIMIT",
+		"RATE_LIMIT_API_LIMIT",
+		"RATE_LIMIT_CREATE_LINK_LIMIT",
+		"RATE_LIMIT_BULK_CREATE_LIMIT",
+		"RATE_LIMIT_REDIRECT_LIMIT",
+		"RATE_LIMIT_TRIAL_CREATE_LIMIT",
+		"RATE_LIMIT_ABUSE_REPORT_LIMIT",
+	}
+	for _, key := range intKeys {
+		value, ok := os.LookupEnv(key)
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if _, err := strconv.Atoi(strings.TrimSpace(value)); err != nil {
+			return fmt.Errorf("%s 必须为整数", key)
+		}
+	}
+
+	durationKeys := []string{
+		"HTTP_READ_TIMEOUT",
+		"HTTP_WRITE_TIMEOUT",
+		"HTTP_IDLE_TIMEOUT",
+		"HTTP_SHUTDOWN_TIMEOUT",
+		"ACCESS_TOKEN_TTL",
+		"REFRESH_TOKEN_TTL",
+		"PASSWORD_RESET_TTL",
+		"MYSQL_CONN_MAX_LIFETIME",
+		"REDIS_DIAL_TIMEOUT",
+		"REDIS_READ_TIMEOUT",
+		"REDIS_WRITE_TIMEOUT",
+		"IDEMPOTENCY_TTL",
+		"TRIAL_SESSION_TTL",
+		"TRIAL_CLEANUP_INTERVAL",
+		"WEBHOOK_POLL_INTERVAL",
+		"WEBHOOK_REQUEST_TIMEOUT",
+		"WEBHOOK_LEASE",
+		"RATE_LIMIT_REGISTER_WINDOW",
+		"RATE_LIMIT_LOGIN_WINDOW",
+		"RATE_LIMIT_REFRESH_WINDOW",
+		"RATE_LIMIT_API_WINDOW",
+		"RATE_LIMIT_CREATE_LINK_WINDOW",
+		"RATE_LIMIT_BULK_CREATE_WINDOW",
+		"RATE_LIMIT_REDIRECT_WINDOW",
+		"RATE_LIMIT_TRIAL_CREATE_WINDOW",
+		"RATE_LIMIT_ABUSE_REPORT_WINDOW",
+	}
+	for _, key := range durationKeys {
+		value, ok := os.LookupEnv(key)
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(strings.TrimSpace(value)); err != nil {
+			return fmt.Errorf("%s 必须为 Go Duration", key)
+		}
+	}
+
+	boolKeys := []string{
+		"ALLOW_MIGRATION_DOWN",
+		"RATE_LIMIT_ENABLED",
+		"RATE_LIMIT_REGISTER_FAIL_CLOSED",
+		"RATE_LIMIT_LOGIN_FAIL_CLOSED",
+		"RATE_LIMIT_REFRESH_FAIL_CLOSED",
+		"RATE_LIMIT_API_FAIL_CLOSED",
+		"RATE_LIMIT_CREATE_LINK_FAIL_CLOSED",
+		"RATE_LIMIT_BULK_CREATE_FAIL_CLOSED",
+		"RATE_LIMIT_REDIRECT_FAIL_CLOSED",
+		"RATE_LIMIT_TRIAL_CREATE_FAIL_CLOSED",
+		"RATE_LIMIT_ABUSE_REPORT_FAIL_CLOSED",
+		"WEBHOOK_ALLOW_PRIVATE_TARGETS",
+	}
+	for _, key := range boolKeys {
+		value, ok := os.LookupEnv(key)
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if _, err := strconv.ParseBool(strings.TrimSpace(value)); err != nil {
+			return fmt.Errorf("%s 必须为布尔值", key)
 		}
 	}
 	return nil

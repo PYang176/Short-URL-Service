@@ -2,6 +2,7 @@ package link
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,6 +14,21 @@ import (
 
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 )
+
+// TestIdempotencyFinalizeContextIgnoresCancellation 验证请求取消后仍能完成幂等状态落库。
+func TestIdempotencyFinalizeContextIgnoresCancellation(t *testing.T) {
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	cancelRequest()
+
+	finalizeCtx, cancelFinalize := idempotencyFinalizeContext(requestCtx)
+	defer cancelFinalize()
+	if err := finalizeCtx.Err(); err != nil {
+		t.Fatalf("finalize context error = %v, want nil", err)
+	}
+	if _, ok := finalizeCtx.Deadline(); !ok {
+		t.Fatal("finalize context 缺少超时")
+	}
+}
 
 // TestHandlerCreateListAndRedirect 验证短链 API 主流程和公开跳转
 func TestHandlerCreateListAndRedirect(t *testing.T) {

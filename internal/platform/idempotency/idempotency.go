@@ -16,6 +16,8 @@ const (
 	StateProcessing uint8 = 1
 	// StateCompleted 表示首次请求已有可重放结果
 	StateCompleted uint8 = 2
+	// processingLease 是允许重新接管未完成幂等请求的等待时间
+	processingLease = 30 * time.Second
 )
 
 var (
@@ -37,6 +39,8 @@ type Record struct {
 	ResponseBody sql.NullString `db:"response_body"`
 	// ExpiresAt 是幂等结果失效时间
 	ExpiresAt time.Time `db:"expires_at"`
+	// UpdatedAt 是 processing 状态最近一次领取时间
+	UpdatedAt time.Time `db:"updated_at"`
 }
 
 // Repository 定义幂等状态持久化
@@ -92,7 +96,7 @@ func (r *MySQLRepository) Begin(
 
 	var record Record
 	if err := r.db.GetContext(ctx, &record, `
-		SELECT request_hash, state, status_code, response_body, expires_at
+		SELECT request_hash, state, status_code, response_body, expires_at, updated_at
 		FROM idempotency_keys
 		WHERE workspace_id = ? AND idempotency_key = ?`,
 		workspaceID, key,
@@ -102,7 +106,36 @@ func (r *MySQLRepository) Begin(
 	if !bytes.Equal(record.RequestHash, hash) {
 		return nil, false, ErrRequestMismatch
 	}
-	return &record, affected == 1, nil
+	if affected == 1 {
+		return &record, true, nil
+	}
+	if record.State != StateProcessing || record.UpdatedAt.After(now.Add(-processingLease)) {
+		return &record, false, nil
+	}
+
+	// 过期处理中状态允许相同请求接管；业务表自身的同一幂等键约束保证不会重复创建资源。
+
+	result, err = r.db.ExecContext(ctx, `
+		UPDATE idempotency_keys
+		SET request_hash = ?, updated_at = ?, expires_at = ?
+		WHERE workspace_id = ? AND idempotency_key = ?
+		  AND state = ? AND updated_at <= ?`,
+		hash, now, now.Add(ttl),
+		workspaceID, key, StateProcessing, now.Add(-processingLease),
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("接管过期幂等请求失败: %w", err)
+	}
+	reclaimed, err := result.RowsAffected()
+	if err != nil {
+		return nil, false, fmt.Errorf("读取幂等接管行数失败: %w", err)
+	}
+	if reclaimed == 1 {
+		record.UpdatedAt = now
+		record.ExpiresAt = now.Add(ttl)
+		return &record, true, nil
+	}
+	return &record, false, nil
 }
 
 // Complete 保存首次成功响应

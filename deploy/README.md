@@ -34,6 +34,9 @@ API 与 Worker 的 `/metrics` 只监听容器内网 `:9091`，Compose 不发布�
 用户 Web 和公开 API 无法读取指标。Prometheus 自身只绑定宿主机回环地址，
 Grafana 关闭匿名访问并要求管理员登录。
 
+API 和 Worker 的宿主机调试端口也只绑定 `127.0.0.1`。外部访问统一经过 Web
+容器中的 Nginx，避免调用方直连 API 后伪造客户端 IP。
+
 ## 仪表盘
 
 `grafana/dashboards/shorturl-overview.json` 包含：

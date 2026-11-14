@@ -61,6 +61,8 @@ type createRequest struct {
 	Title string `json:"title"`
 	// Notes 是可选备注
 	Notes string `json:"notes"`
+	// IdempotencyKey 是服务端从请求头填入的幂等键，不接受 JSON 请求体覆盖
+	IdempotencyKey string `json:"-"`
 	// RedirectCode 是 301 或 302，默认 302
 	RedirectCode int `json:"redirect_code"`
 	// StartsAt 是可选生效时间
@@ -222,6 +224,7 @@ func (h *Handler) Create(c *gin.Context) {
 
 	workspaceID := c.GetString(identity.ContextWorkspaceID)
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	request.IdempotencyKey = key
 	var requestHash []byte
 	if key != "" && h.idempotency != nil {
 		if !validIdempotencyKey(key) {
@@ -257,14 +260,15 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 
-	link, createErr := h.service.Create(
-		c.Request.Context(),
-		workspaceID,
-		CreateInput(request),
-	)
+	input := CreateInput(request)
+	input.IdempotencyKey = key
+	link, createErr := h.service.Create(c.Request.Context(), workspaceID, input)
 	if createErr != nil {
 		if key != "" && h.idempotency != nil {
-			if abortErr := h.idempotency.Abort(c.Request.Context(), workspaceID, key, requestHash); abortErr != nil {
+			finalizeCtx, cancel := idempotencyFinalizeContext(c.Request.Context())
+			abortErr := h.idempotency.Abort(finalizeCtx, workspaceID, key, requestHash)
+			cancel()
+			if abortErr != nil {
 				h.logger.Warn("释放幂等键失败", "error", abortErr)
 			}
 		}
@@ -278,10 +282,13 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	if key != "" && h.idempotency != nil {
-		if err := h.idempotency.Complete(
-			c.Request.Context(), workspaceID, key, requestHash,
+		finalizeCtx, cancel := idempotencyFinalizeContext(c.Request.Context())
+		err := h.idempotency.Complete(
+			finalizeCtx, workspaceID, key, requestHash,
 			http.StatusCreated, string(responseBody),
-		); err != nil {
+		)
+		cancel()
+		if err != nil {
 			h.logger.Error("保存幂等响应失败", "error", err)
 		}
 	}
@@ -344,10 +351,14 @@ func (h *Handler) BulkCreate(c *gin.Context) {
 		c.Request.Context(),
 		workspaceID,
 		bytes.NewReader(csvBody),
+		key,
 	)
 	if createErr != nil {
 		if key != "" && h.idempotency != nil {
-			if abortErr := h.idempotency.Abort(c.Request.Context(), workspaceID, key, requestHash); abortErr != nil {
+			finalizeCtx, cancel := idempotencyFinalizeContext(c.Request.Context())
+			abortErr := h.idempotency.Abort(finalizeCtx, workspaceID, key, requestHash)
+			cancel()
+			if abortErr != nil {
 				h.logger.Warn("释放批量创建幂等键失败", "error", abortErr)
 			}
 		}
@@ -362,14 +373,17 @@ func (h *Handler) BulkCreate(c *gin.Context) {
 		return
 	}
 	if key != "" && h.idempotency != nil {
-		if err := h.idempotency.Complete(
-			c.Request.Context(),
+		finalizeCtx, cancel := idempotencyFinalizeContext(c.Request.Context())
+		err := h.idempotency.Complete(
+			finalizeCtx,
 			workspaceID,
 			key,
 			requestHash,
 			http.StatusOK,
 			string(responseBody),
-		); err != nil {
+		)
+		cancel()
+		if err != nil {
 			h.logger.Error("保存批量创建幂等响应失败", "error", err)
 		}
 	}
@@ -674,6 +688,11 @@ func validIdempotencyKey(value string) bool {
 		}
 	}
 	return true
+}
+
+// idempotencyFinalizeContext 保留请求值但移除取消信号，并限制幂等状态落库时间。
+func idempotencyFinalizeContext(requestCtx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(requestCtx), 3*time.Second)
 }
 
 // writeLinkError 将短链领域错误映射为 HTTP 响应

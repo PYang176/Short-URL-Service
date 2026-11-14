@@ -79,4 +79,16 @@ func TestMySQLRepositoryLifecycle(t *testing.T) {
 	if _, _, err := service.Begin(t.Context(), workspaceID, key, otherHash[:]); !errors.Is(err, ErrRequestMismatch) {
 		t.Fatalf("Begin() mismatch error = %v", err)
 	}
+
+	leaseKey := "request-key-lease"
+	leaseHash := sha256.Sum256([]byte("lease-body"))
+	record, claimed, err = service.Begin(t.Context(), workspaceID, leaseKey, leaseHash[:])
+	if err != nil || !claimed || record.State != StateProcessing {
+		t.Fatalf("Begin() lease = %+v, %v, %v", record, claimed, err)
+	}
+	service.now = func() time.Time { return now.Add(31 * time.Second) }
+	record, claimed, err = service.Begin(t.Context(), workspaceID, leaseKey, leaseHash[:])
+	if err != nil || !claimed || record.State != StateProcessing {
+		t.Fatalf("Begin() reclaim = %+v, %v, %v", record, claimed, err)
+	}
 }

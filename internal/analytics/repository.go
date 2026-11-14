@@ -230,9 +230,12 @@ func (r *MySQLRepository) InsertBatch(ctx context.Context, events []Event) (int6
 	values := make([]string, 0, len(events))
 	args := make([]any, 0, len(events)*columnsPerEvent)
 	for _, event := range events {
-		if workspaceID, ok := linkWorkspaces[event.LinkID]; ok {
-			event.WorkspaceID = workspaceID
+		workspaceID, ok := linkWorkspaces[event.LinkID]
+		if !ok {
+			// 游客清理可能已删除链接；此时丢弃延迟事件，避免写入无法归属的孤儿点击。
+			continue
 		}
+		event.WorkspaceID = workspaceID
 		values = append(values, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 		args = append(args,
 			event.EventID, event.WorkspaceID, event.LinkID, event.DomainID, event.Slug,
@@ -240,6 +243,9 @@ func (r *MySQLRepository) InsertBatch(ctx context.Context, events []Event) (int6
 			event.Browser, event.Language, event.Referrer, event.UTMSource, event.UTMMedium,
 			event.UTMCampaign, event.UTMTerm, event.UTMContent, event.IsBot,
 		)
+	}
+	if len(values) == 0 {
+		return 0, nil
 	}
 
 	query := `

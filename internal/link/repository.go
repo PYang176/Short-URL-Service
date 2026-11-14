@@ -109,16 +109,27 @@ func (r *MySQLRepository) Create(ctx context.Context, link *Link, event *OutboxE
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO links (
 			id, workspace_id, domain_id, slug, destination_url, destination_hash,
-			title, notes, status, redirect_code, starts_at, expires_at,
+			title, notes, idempotency_key, status, redirect_code, starts_at, expires_at,
 			human_clicks, version, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		link.ID, link.WorkspaceID, link.DomainID, link.Slug, link.DestinationURL,
-		link.DestinationHash, link.Title, link.Notes, link.Status, link.RedirectCode,
-		link.StartsAt, link.ExpiresAt, link.HumanClicks, link.Version,
+		link.DestinationHash, link.Title, link.Notes, nullString(link.IdempotencyKey),
+		link.Status, link.RedirectCode, link.StartsAt, link.ExpiresAt,
+		link.HumanClicks, link.Version,
 		link.CreatedAt, link.UpdatedAt,
 	)
 	if err != nil {
 		if isDuplicateKey(err) {
+			if link.IdempotencyKey != "" {
+				existing, findErr := findByIdempotencyKey(ctx, tx, link.WorkspaceID, link.IdempotencyKey)
+				if findErr != nil {
+					return findErr
+				}
+				if existing != nil {
+					*link = *existing
+					return nil
+				}
+			}
 			return ErrSlugTaken
 		}
 		return fmt.Errorf("创建短链接失败: %w", err)
@@ -138,6 +149,7 @@ func (r *MySQLRepository) FindByID(ctx context.Context, workspaceID, id string) 
 	err := r.db.GetContext(ctx, &result, `
 		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
 			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			COALESCE(l.idempotency_key, '') AS idempotency_key,
 			l.status, l.redirect_code, l.starts_at, l.expires_at,
 			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
 		FROM links AS l
@@ -159,6 +171,7 @@ func (r *MySQLRepository) FindByDomainSlug(ctx context.Context, domainID, slug s
 	err := r.db.GetContext(ctx, &result, `
 		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
 			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			COALESCE(l.idempotency_key, '') AS idempotency_key,
 			l.status, l.redirect_code, l.starts_at, l.expires_at,
 			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
 		FROM links AS l
@@ -185,6 +198,7 @@ func (r *MySQLRepository) List(
 	query := `
 		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
 			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			COALESCE(l.idempotency_key, '') AS idempotency_key,
 			l.status, l.redirect_code, l.starts_at, l.expires_at,
 			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
 		FROM links AS l
@@ -197,6 +211,7 @@ func (r *MySQLRepository) List(
 		query = `
 		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
 			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			COALESCE(l.idempotency_key, '') AS idempotency_key,
 			l.status, l.redirect_code, l.starts_at, l.expires_at,
 			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
 		FROM links AS l
@@ -330,6 +345,40 @@ func enqueueOutbox(
 		return fmt.Errorf("写入 Webhook Outbox 失败: %w", err)
 	}
 	return nil
+}
+
+// nullString 将空字符串转换为 SQL NULL，避免空幂等键触发唯一约束冲突。
+func nullString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+// findByIdempotencyKey 在事务内查询已提交的同一幂等链接。
+func findByIdempotencyKey(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	workspaceID, key string,
+) (*Link, error) {
+	var result Link
+	err := tx.GetContext(ctx, &result, `
+		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
+			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
+			COALESCE(l.idempotency_key, '') AS idempotency_key,
+			l.status, l.redirect_code, l.starts_at, l.expires_at,
+			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
+		FROM links AS l
+		INNER JOIN domains AS d ON d.id = l.domain_id
+		WHERE l.workspace_id = ? AND l.idempotency_key = ?
+		LIMIT 1`, workspaceID, key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("按幂等键查询短链接失败: %w", err)
+	}
+	return &result, nil
 }
 
 // toDomain 将数据库行转换为域名业务模型

@@ -60,6 +60,8 @@ type Link struct {
 	Title string `db:"title"`
 	// Notes 是用户可编辑的备注
 	Notes string `db:"notes"`
+	// IdempotencyKey 是创建该链接时使用的幂等键
+	IdempotencyKey string `db:"idempotency_key"`
 	// Status 是链接状态，有效值为 StatusActive 或 StatusDisabled
 	Status uint8 `db:"status"`
 	// RedirectCode 是 301 或 302
@@ -92,6 +94,8 @@ type CreateInput struct {
 	Title string
 	// Notes 是可选备注
 	Notes string
+	// IdempotencyKey 是可选创建幂等键，用于崩溃恢复和重试
+	IdempotencyKey string
 	// RedirectCode 是 301 或 302
 	RedirectCode int
 	// StartsAt 是可选生效时间

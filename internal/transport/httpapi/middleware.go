@@ -39,7 +39,6 @@ func AccessLog(logger *slog.Logger) gin.HandlerFunc {
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),
 			"latency_ms", time.Since(started).Milliseconds(),
-			"client_ip", c.ClientIP(),
 		)
 	}
 }

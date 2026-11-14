@@ -205,8 +205,69 @@ func TestValidateRejectsInvalidTrialConfig(t *testing.T) {
 
 // TestValidateRejectsPrivateWebhookTargetsInProduction 验证生产环境不能开放私网回调
 func TestValidateRejectsPrivateWebhookTargetsInProduction(t *testing.T) {
+	cfg := productionTestConfig()
+	cfg.Webhook.AllowPrivateTargets = true
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want private webhook target rejection")
+	}
+}
+
+// TestValidateProductionSecurityDefaults 验证生产环境不能使用 HTTP 公网地址或模拟域名验证
+func TestValidateProductionSecurityDefaults(t *testing.T) {
+	tests := []struct {
+		name  string
+		apply func(*Config)
+	}{
+		{
+			name: "HTTP public URL",
+			apply: func(cfg *Config) {
+				cfg.PublicBaseURL = "http://short.example.com"
+			},
+		},
+		{
+			name: "mock domain verification",
+			apply: func(cfg *Config) {
+				cfg.Domain.VerifyMode = "mock"
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := productionTestConfig()
+			test.apply(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want production security error")
+			}
+		})
+	}
+}
+
+// TestValidateEnvValueFormats 验证显式配置格式错误时不会静默回退默认值
+func TestValidateEnvValueFormats(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "invalid integer", key: "RATE_LIMIT_LOGIN_LIMIT", value: "ten"},
+		{name: "invalid duration", key: "WEBHOOK_REQUEST_TIMEOUT", value: "soon"},
+		{name: "invalid boolean", key: "RATE_LIMIT_ENABLED", value: "sometimes"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(test.key, test.value)
+			if err := validateEnvValueFormats(); err == nil {
+				t.Fatal("validateEnvValueFormats() error = nil, want format error")
+			}
+		})
+	}
+}
+
+// productionTestConfig 返回除单项安全边界外均可通过校验的生产配置。
+func productionTestConfig() Config {
 	validRule := RateLimitRule{Limit: 1, Window: time.Minute}
-	cfg := Config{
+	return Config{
 		Env:           EnvProduction,
 		PublicBaseURL: "https://short.example.com",
 		HTTP:          HTTPConfig{Addr: ":8080", MetricsAddr: "127.0.0.1:9091"},
@@ -220,7 +281,7 @@ func TestValidateRejectsPrivateWebhookTargetsInProduction(t *testing.T) {
 			ClickStream:   "clicks",
 			ConsumerGroup: "analytics",
 		},
-		Domain: DomainConfig{VerifyMode: "mock", CNAME: "links.localhost"},
+		Domain: DomainConfig{VerifyMode: "dns", CNAME: "links.example.com"},
 		RateLimit: RateLimitConfig{
 			Enabled:     true,
 			Register:    validRule,
@@ -251,11 +312,7 @@ func TestValidateRejectsPrivateWebhookTargetsInProduction(t *testing.T) {
 			MaxAttempts:         8,
 			RequestTimeout:      10 * time.Second,
 			Lease:               30 * time.Second,
-			AllowPrivateTargets: true,
+			AllowPrivateTargets: false,
 		},
-	}
-
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("Validate() error = nil, want private webhook target rejection")
 	}
 }

@@ -67,11 +67,10 @@ func rateLimit(
 	identityKey func(*gin.Context) string,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		requestID, _ := c.Get(requestIDKey)
+		// member 必须由服务端生成，不能复用客户端可控制的 X-Request-ID。
+		// 否则固定同一请求头只会更新 ZSET 分数，无法增加窗口计数。
+
 		member := uuid.NewString()
-		if value, ok := requestID.(string); ok && value != "" {
-			member = value
-		}
 		key := "ratelimit:v1:" + scope + ":" + identityKey(c)
 		decision, err := limiter.Allow(c.Request.Context(), key, member, rule)
 		if err != nil {

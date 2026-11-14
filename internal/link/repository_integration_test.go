@@ -91,6 +91,45 @@ func TestMySQLRepositoryLifecycle(t *testing.T) {
 	if err := repo.Create(t.Context(), cloneLink(link), nil); !errors.Is(err, ErrSlugTaken) {
 		t.Fatalf("重复短码 Create() error = %v, want ErrSlugTaken", err)
 	}
+	idempotent := &Link{
+		ID:              ulid.Make().String(),
+		WorkspaceID:     workspaceID,
+		DomainID:        domain.ID,
+		Slug:            "integration-idempotent",
+		DestinationURL:  "https://example.com/idempotent",
+		DestinationHash: destinationHash[:],
+		Title:           "Idempotent",
+		IdempotencyKey:  "integration-idempotency-key",
+		Status:          StatusActive,
+		RedirectCode:    302,
+		Version:         1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := repo.Create(t.Context(), idempotent, nil); err != nil {
+		t.Fatalf("幂等链接 Create() error = %v", err)
+	}
+	replayed := &Link{
+		ID:              ulid.Make().String(),
+		WorkspaceID:     workspaceID,
+		DomainID:        domain.ID,
+		Slug:            "integration-idempotent-replay",
+		DestinationURL:  "https://example.com/idempotent",
+		DestinationHash: destinationHash[:],
+		Title:           "Idempotent Replay",
+		IdempotencyKey:  idempotent.IdempotencyKey,
+		Status:          StatusActive,
+		RedirectCode:    302,
+		Version:         1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := repo.Create(t.Context(), replayed, nil); err != nil {
+		t.Fatalf("幂等重放 Create() error = %v", err)
+	}
+	if replayed.ID != idempotent.ID || replayed.Slug != idempotent.Slug {
+		t.Fatalf("幂等重放结果 = %+v, want original id=%s slug=%s", replayed, idempotent.ID, idempotent.Slug)
+	}
 
 	found, err := repo.FindByDomainSlug(t.Context(), domain.ID, link.Slug)
 	if err != nil {
@@ -104,8 +143,8 @@ func TestMySQLRepositoryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(links) != 1 {
-		t.Fatalf("List() count = %d, want 1", len(links))
+	if len(links) != 2 {
+		t.Fatalf("List() count = %d, want 2", len(links))
 	}
 
 	found.DestinationURL = "https://example.com/changed"

@@ -20,7 +20,8 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 - URL 规范化、严格 JSON、请求体大小限制和可信代理边界。
 - Redis 空值缓存、TTL 抖动、`singleflight` 和主动缓存失效。
 - Redis 滑动窗口限流，覆盖注册、登录、刷新、管理接口和公开跳转。
-- 创建短链 `Idempotency-Key`，相同请求可安全重放。
+- 创建短链 `Idempotency-Key`，相同请求可安全重放；业务表保存幂等键，进程
+  异常后可以恢复首次创建结果。
 - Redis Streams 点击事件、Consumer Group、ACK 和 Pending 接管。
 - MySQL 点击明细、趋势、独立访客、设备、系统、浏览器和来源分析。
 - 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
@@ -197,14 +198,9 @@ API 启动后运行：
 .\scripts\seed-demo.ps1
 ```
 
-默认账号：
-
-```text
-demo@example.com
-demo12345
-```
-
-脚本会幂等创建四个演示短链，并生成未命中 UA 规则的请求和 Googlebot 请求。
+脚本默认只允许访问本机演示环境。首次运行会生成随机密码并输出演示账号；
+再次运行同一账号时，通过 `-Password` 显式传入首次生成的密码。脚本会幂等
+创建四个演示短链，并生成未命中 UA 规则的请求和 Googlebot 请求。
 
 ## 安全与限流
 
@@ -228,12 +224,15 @@ X-RateLimit-Limit: 600
 X-RateLimit-Remaining: 0
 ```
 
-所有策略都可通过 `.env` 覆盖。
+所有策略都可通过 `.env` 覆盖。Redis 滑动窗口 member 由服务端随机生成，
+客户端 Request ID 只用于日志关联，不能影响限流计数。Compose 只把 API 和
+Worker 调试端口绑定到宿主机回环地址。
 
-Compose 要求显式设置 `MYSQL_DSN`、`JWT_SECRET` 和
-`ANALYTICS_HASH_SECRET`，不提供内置默认密钥。缺失配置时 Compose 直接报错。
-生产环境还必须设置 `APP_ENV=production`；服务会拒绝长度不足或来自示例配置
-的密钥。
+Compose 要求显式设置 `MYSQL_DSN`、`JWT_SECRET`、`ANALYTICS_HASH_SECRET`
+和 `GRAFANA_ADMIN_PASSWORD`，不提供内置默认密钥。缺失配置时 Compose 直接
+报错。生产环境还必须设置 `APP_ENV=production`、HTTPS 的
+`PUBLIC_BASE_URL` 和 `DOMAIN_VERIFY_MODE=dns`；服务会拒绝长度不足或来自
+示例配置的密钥。
 
 创建短链接支持：
 
@@ -246,6 +245,10 @@ Idempotency-Key: create-campaign-2026-11
 ```http
 Idempotent-Replayed: true
 ```
+
+幂等键同时写入链接业务表；如果链接已经提交但幂等结果尚未完成，服务在
+30 秒接管窗口后可以重试并返回已有链接，不会重复创建随机短码。CSV 批量创建
+会为每一行生成稳定的行级幂等键。
 
 免登录试用使用：
 

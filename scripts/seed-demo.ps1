@@ -1,11 +1,25 @@
 param(
     [string]$BaseURL = "http://127.0.0.1:18080",
     [string]$Email = "demo@example.com",
-    [string]$Password = "demo12345",
+    [string]$Password,
+    [switch]$AllowRemote,
     [switch]$SkipClicks
 )
 
 $ErrorActionPreference = "Stop"
+
+$baseUri = [Uri]$BaseURL
+if (-not $baseUri.IsAbsoluteUri) {
+    throw "BaseURL 必须是绝对地址。"
+}
+if (-not $AllowRemote -and $baseUri.Host -notin @("127.0.0.1", "localhost", "::1")) {
+    throw "默认只允许向本机演示环境创建数据；远程执行必须显式传入 -AllowRemote。"
+}
+if ([string]::IsNullOrWhiteSpace($Password)) {
+    $passwordBytes = New-Object byte[] 24
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($passwordBytes)
+    $Password = [Convert]::ToBase64String($passwordBytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+}
 
 $loginBody = @{ email = $Email; password = $Password } | ConvertTo-Json
 $loginResponse = Invoke-WebRequest `

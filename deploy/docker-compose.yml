@@ -83,7 +83,7 @@ services:
       WEBHOOK_LEASE: ${WEBHOOK_LEASE:-30s}
       WEBHOOK_ALLOW_PRIVATE_TARGETS: ${WEBHOOK_ALLOW_PRIVATE_TARGETS:-true}
     ports:
-      - "${API_PORT:-18080}:8080"
+      - "127.0.0.1:${API_PORT:-18080}:8080"
     depends_on:
       redis:
         condition: service_healthy
@@ -120,7 +120,7 @@ services:
       WEBHOOK_LEASE: ${WEBHOOK_LEASE:-30s}
       WEBHOOK_ALLOW_PRIVATE_TARGETS: ${WEBHOOK_ALLOW_PRIVATE_TARGETS:-true}
     ports:
-      - "${WORKER_PORT:-18081}:8081"
+      - "127.0.0.1:${WORKER_PORT:-18081}:8081"
     depends_on:
       redis:
         condition: service_healthy

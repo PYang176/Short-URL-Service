@@ -2,6 +2,8 @@ package webhook
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -256,6 +258,11 @@ func (r *MySQLRepository) MarkSuccess(
 		_ = tx.Rollback()
 	}()
 
+	// 所有投递结果事务先锁端点，再锁投递记录，与停用端点的锁顺序保持一致。
+
+	if err := lockEndpoint(ctx, tx, job.WebhookID); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE webhook_deliveries
 		SET status = ?, response_status = ?, last_error = '', locked_until = NULL,
@@ -306,6 +313,11 @@ func (r *MySQLRepository) MarkFailure(
 		_ = tx.Rollback()
 	}()
 
+	// 失败处理同样遵循端点 -> 投递记录 -> 端点的固定锁顺序，避免与停用操作互相等待。
+
+	if err := lockEndpoint(ctx, tx, job.WebhookID); err != nil {
+		return err
+	}
 	dead := job.AttemptCount >= maxAttempts
 	status := DeliveryStatusPending
 	nextAttemptAt := now.Add(deliveryRetryDelay(job.AttemptCount))
@@ -353,6 +365,21 @@ func (r *MySQLRepository) MarkFailure(
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("提交 Webhook 失败事务失败: %w", err)
+	}
+	return nil
+}
+
+// lockEndpoint 在事务内锁定 Webhook 端点，统一并发事务的加锁顺序。
+func lockEndpoint(ctx context.Context, tx *sqlx.Tx, endpointID string) error {
+	var id string
+	if err := tx.GetContext(ctx, &id, `
+		SELECT id FROM webhook_endpoints
+		WHERE id = ?
+		FOR UPDATE`, endpointID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrLeaseLost
+		}
+		return fmt.Errorf("锁定 Webhook 端点失败: %w", err)
 	}
 	return nil
 }

@@ -6,13 +6,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	driver "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/oklog/ulid/v2"
 
@@ -332,6 +334,107 @@ func TestMySQLRepositoryConcurrentClaims(t *testing.T) {
 	}
 	if len(seen) != 2 {
 		t.Fatalf("并发领取任务数 = %d, want 2", len(seen))
+	}
+}
+
+// TestMySQLRepositoryConcurrentDisableAndMarkSuccess 验证停用端点与成功回写不会发生锁顺序死锁
+func TestMySQLRepositoryConcurrentDisableAndMarkSuccess(t *testing.T) {
+	db, workspaceID := integrationDatabase(t)
+	repo := NewMySQLRepository(db)
+	linkRepo, domain := integrationLinkRepository(
+		t,
+		db,
+		workspaceID,
+		time.Now().UTC().Truncate(time.Millisecond),
+	)
+
+	for index := 0; index < 80; index++ {
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		endpoint := &Endpoint{
+			ID:               ulid.Make().String(),
+			WorkspaceID:      workspaceID,
+			Name:             fmt.Sprintf("Lock Order %d", index),
+			URL:              "http://127.0.0.1:9014/hook",
+			SecretCiphertext: []byte("ciphertext"),
+			Status:           EndpointStatusActive,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if err := repo.CreateEndpoint(t.Context(), endpoint); err != nil {
+			t.Fatalf("CreateEndpoint() error = %v", err)
+		}
+
+		destination := fmt.Sprintf("https://example.com/lock-order-%d", index)
+		destinationHash := sha256.Sum256([]byte(destination))
+		event := &link.OutboxEvent{
+			ID:      ulid.Make().String(),
+			Type:    "link.created",
+			Payload: []byte(`{"type":"link.created"}`),
+		}
+		if err := linkRepo.Create(t.Context(), &link.Link{
+			ID:              ulid.Make().String(),
+			WorkspaceID:     workspaceID,
+			DomainID:        domain.ID,
+			DomainHostname:  domain.Hostname,
+			Slug:            fmt.Sprintf("lock-%d", index),
+			DestinationURL:  destination,
+			DestinationHash: destinationHash[:],
+			Status:          link.StatusActive,
+			RedirectCode:    302,
+			Version:         1,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}, event); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		jobs, err := repo.ClaimDeliveries(
+			t.Context(),
+			1,
+			now.Add(time.Second),
+			now.Add(time.Minute),
+		)
+		if err != nil || len(jobs) != 1 {
+			t.Fatalf("ClaimDeliveries() jobs=%d error=%v", len(jobs), err)
+		}
+
+		start := make(chan struct{})
+		results := make(chan error, 2)
+		var wait sync.WaitGroup
+		wait.Add(2)
+		go func(job *DeliveryJob) {
+			defer wait.Done()
+			<-start
+			results <- repo.MarkSuccess(
+				t.Context(),
+				job,
+				http.StatusNoContent,
+				now.Add(2*time.Second),
+			)
+		}(&jobs[0])
+		go func() {
+			defer wait.Done()
+			<-start
+			results <- repo.DisableEndpoint(
+				t.Context(),
+				workspaceID,
+				endpoint.ID,
+				now.Add(2*time.Second),
+			)
+		}()
+		close(start)
+		wait.Wait()
+		close(results)
+
+		for resultErr := range results {
+			if resultErr == nil || errors.Is(resultErr, ErrLeaseLost) {
+				continue
+			}
+			var mysqlErr *driver.MySQLError
+			if errors.As(resultErr, &mysqlErr) && mysqlErr.Number == 1213 {
+				t.Fatalf("检测到事务死锁: %v", resultErr)
+			}
+			t.Fatalf("并发事务失败: %v", resultErr)
+		}
 	}
 }
 
