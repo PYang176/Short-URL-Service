@@ -5,6 +5,7 @@ info:
   description: |
     短链接平台 HTTP API。用户接口使用 Bearer Access Token；
     短链与分析资源还可以使用带作用域的 API Key。
+    域名、API Key 和 Webhook 管理接口只允许平台管理员 JWT。
 servers:
   - url: /
 security:
@@ -116,12 +117,16 @@ paths:
     get:
       tags: [API Keys]
       summary: 查询当前工作空间 API Key
+      description: 仅平台管理员可访问。
       responses:
         "200":
           description: API Key 元数据列表
+        "403":
+          description: 当前账号不是平台管理员
     post:
       tags: [API Keys]
       summary: 创建 API Key，明文 Secret 只返回一次
+      description: 仅平台管理员可访问。
       requestBody:
         required: true
         content:
@@ -131,10 +136,13 @@ paths:
       responses:
         "201":
           description: API Key 与只显示一次的 Secret
+        "403":
+          description: 当前账号不是平台管理员
   /api/v1/api-keys/{id}:
     delete:
       tags: [API Keys]
       summary: 撤销 API Key
+      description: 仅平台管理员可访问。
       parameters:
         - name: id
           in: path
@@ -146,10 +154,13 @@ paths:
           description: 已撤销
         "404":
           description: API Key 不存在
+        "403":
+          description: 当前账号不是平台管理员
   /api/v1/webhooks:
     get:
       tags: [Webhooks]
       summary: 查询当前工作空间 Webhook 端点
+      description: 仅平台管理员可访问。
       responses:
         "200":
           description: Webhook 端点列表
@@ -163,9 +174,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/WebhookEndpoint"
+        "403":
+          description: 当前账号不是平台管理员
     post:
       tags: [Webhooks]
       summary: 创建 Webhook 端点，签名 Secret 只返回一次
+      description: 仅平台管理员可访问。
       requestBody:
         required: true
         content:
@@ -181,10 +195,13 @@ paths:
                 $ref: "#/components/schemas/CreateWebhookResponse"
         "400":
           description: URL 格式无效或目标地址违反安全策略
+        "403":
+          description: 当前账号不是平台管理员
   /api/v1/webhooks/{id}:
     delete:
       tags: [Webhooks]
       summary: 停用 Webhook 端点并终止待投递任务
+      description: 仅平台管理员可访问。
       parameters:
         - $ref: "#/components/parameters/WebhookID"
       responses:
@@ -192,10 +209,13 @@ paths:
           description: 已停用
         "404":
           description: Webhook 不存在
+        "403":
+          description: 当前账号不是平台管理员
   /api/v1/webhooks/{id}/deliveries:
     get:
       tags: [Webhooks]
       summary: 查询端点近期 Outbox 投递记录
+      description: 仅平台管理员可访问。
       parameters:
         - $ref: "#/components/parameters/WebhookID"
         - name: limit
@@ -218,6 +238,8 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/WebhookDelivery"
+        "403":
+          description: 当前账号不是平台管理员
 components:
   securitySchemes:
     BearerAuth:

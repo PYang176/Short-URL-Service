@@ -55,13 +55,13 @@ const router = createRouter({
           path: 'domains',
           name: 'domains',
           component: () => import('@/views/DomainsView.vue'),
-          meta: { requiresAuth: true, title: '自定义域名' },
+          meta: { requiresAuth: true, requiresAdmin: true, title: '自定义域名' },
         },
         {
           path: 'developer',
           name: 'developer',
           component: () => import('@/views/DeveloperView.vue'),
-          meta: { requiresAuth: true, title: '开发者' },
+          meta: { requiresAuth: true, requiresAdmin: true, title: '开发者' },
         },
       ],
     },
@@ -83,6 +83,9 @@ router.beforeEach((to) => {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.meta.guestOnly && auth.isAuthenticated) {
+    return { name: 'dashboard' }
+  }
+  if (to.meta.requiresAdmin && auth.user?.role !== 2) {
     return { name: 'dashboard' }
   }
   return true

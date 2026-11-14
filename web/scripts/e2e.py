@@ -1,16 +1,10 @@
-"""浏览器端到端验收短链接控制台的主流程。"""
+"""浏览器端到端验收普通用户的短链、二维码和访问分析流程。"""
 
 from __future__ import annotations
 
-import atexit
-import hashlib
-import hmac
-import json
 import os
-import threading
 import time
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -29,76 +23,15 @@ ARTIFACT_DIR = Path(
     )
 )
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-WEBHOOK_TARGET_HOST = os.getenv(
-    "SHORTURL_WEBHOOK_TARGET_HOST",
-    "host.docker.internal",
-)
-
-
-class WebhookReceiver:
-    """在本机接收并校验 API Worker 发出的 Webhook。"""
-
-    def __init__(self) -> None:
-        self.secret = ""
-        self.received = threading.Event()
-        self.signature_valid = False
-        self.event_type = ""
-        self.event_id = ""
-        self.payload: dict[str, object] = {}
-        self.closed = False
-        receiver = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def do_POST(self) -> None:  # noqa: N802
-                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-                timestamp = self.headers.get("X-ShortURL-Timestamp", "")
-                expected = "sha256=" + hmac.new(
-                    receiver.secret.encode(),
-                    timestamp.encode() + b"." + body,
-                    hashlib.sha256,
-                ).hexdigest()
-                receiver.signature_valid = hmac.compare_digest(
-                    expected,
-                    self.headers.get("X-ShortURL-Signature", ""),
-                )
-                receiver.event_type = self.headers.get("X-ShortURL-Event-Type", "")
-                receiver.event_id = self.headers.get("X-ShortURL-Event-ID", "")
-                receiver.payload = json.loads(body)
-                self.send_response(204)
-                self.end_headers()
-                receiver.received.set()
-
-            def log_message(self, _format: str, *_args: object) -> None:
-                return
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        atexit.register(self.close)
-
-    @property
-    def endpoint_url(self) -> str:
-        port = self.server.server_address[1]
-        return f"http://{WEBHOOK_TARGET_HOST}:{port}/shorturl"
-
-    def close(self) -> None:
-        if self.closed:
-            return
-        self.closed = True
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=2)
 
 
 def main() -> None:
     suffix = uuid.uuid4().hex[:8]
     email = f"web-{suffix}@example.com"
     test_ip = f"198.51.100.{1 + int(suffix[:2], 16) % 250}"
-    alias = f"web{suffix}"
     trial_alias = f"trial{suffix}"
-    hostname = f"go-{suffix}.example.com"
+    alias = f"web{suffix}"
     console_errors: list[str] = []
-    webhook_receiver = WebhookReceiver()
 
     with sync_playwright() as playwright:
         launch_options = {"headless": True}
@@ -132,8 +65,6 @@ def main() -> None:
 
         page.goto(f"{BASE_URL}/register")
         page.wait_for_load_state("networkidle")
-        page.screenshot(path=ARTIFACT_DIR / "register.png", full_page=True)
-
         page.get_by_label("显示名称").fill("浏览器验收")
         page.get_by_label("邮箱").fill(email)
         page.get_by_label("密码", exact=True).fill("password123")
@@ -142,101 +73,55 @@ def main() -> None:
         page.wait_for_url("**/dashboard")
         page.wait_for_load_state("networkidle")
         page.get_by_text("已认领 1 条试用短链，点击数据也已保留。").wait_for()
-        page.locator(".recent-list").get_by_text("免登录试用", exact=True).wait_for()
-        page.get_by_text("整体点击趋势").wait_for()
-        total_links = page.locator(".metric-cell").filter(
-            has_text="全部链接",
-        ).locator("strong").inner_text()
-        assert total_links == "1", f"expected 1 workspace link, got {total_links}"
 
-        page.screenshot(path=ARTIFACT_DIR / "dashboard.png", full_page=True)
+        nav_labels = page.locator(".primary-nav a").all_inner_texts()
+        assert [label.strip() for label in nav_labels] == ["工作台", "短链接"], nav_labels
+        assert page.get_by_role("link", name="开发者").count() == 0
+        assert page.get_by_role("link", name="域名").count() == 0
 
-        page.get_by_role("link", name="开发者").click()
-        page.wait_for_url("**/developer")
-        openapi_response = context.request.get(f"{BASE_URL}/openapi.yaml")
-        assert openapi_response.status == 200, openapi_response.text()
-        assert "openapi: 3.1.0" in openapi_response.text()
-        page.locator(".developer-grid").get_by_label("名称", exact=True).fill(
-            "浏览器验收 Key",
-        )
-        page.get_by_role("button", name="创建 API Key").click()
-        api_key = page.locator(".api-secret-value").inner_text()
-        assert api_key.startswith("sl_live_"), api_key
-        api_key_response = context.request.get(
-            f"{API_URL}/api/v1/analytics/overview?days=7",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        assert api_key_response.status == 200, api_key_response.text()
-        page.once("dialog", lambda dialog: dialog.accept())
-        page.get_by_role("button", name="撤销", exact=True).click()
-        page.locator(".api-key-row .status-pill").get_by_text("已撤销").wait_for()
-        revoked_response = context.request.get(
-            f"{API_URL}/api/v1/analytics/overview?days=7",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        assert revoked_response.status == 401, revoked_response.text()
-
-        webhook_panel = page.locator(".webhook-feature")
-        webhook_panel.get_by_label("名称").fill("浏览器验收 Webhook")
-        webhook_panel.get_by_label("回调地址").fill(webhook_receiver.endpoint_url)
-        webhook_panel.get_by_role("button", name="创建 Webhook").click()
-        webhook_secret = webhook_panel.locator(".webhook-secret-value").inner_text()
-        assert webhook_secret.startswith("whsec_"), webhook_secret
-        webhook_receiver.secret = webhook_secret
-        page.screenshot(path=ARTIFACT_DIR / "developer.png", full_page=True)
-
-        page.get_by_role("link", name="域名").click()
-        page.wait_for_url("**/domains")
-        page.get_by_role("textbox", name="域名", exact=True).fill(hostname)
-        page.get_by_role("button", name="添加域名").click()
-        page.get_by_role("heading", name=hostname, exact=True).wait_for()
-        page.screenshot(path=ARTIFACT_DIR / "domains.png", full_page=True)
-        page.get_by_role("button", name="验证域名").click()
-        page.get_by_text("已验证").wait_for()
-
-        page.get_by_role("link", name="工作台").click()
-        page.wait_for_url("**/dashboard")
         page.get_by_role("button", name="创建短链接").click()
         dialog = page.get_by_role("dialog")
-        dialog.get_by_label("域名").select_option(label=hostname)
         dialog.get_by_label("目标地址").fill("https://example.com/original")
         dialog.get_by_label("自定义短码").fill(alias)
         dialog.get_by_label("标题").fill("浏览器验收短链")
         dialog.get_by_role("button", name="创建短链").click()
         page.locator(".recent-list").get_by_text("浏览器验收短链").wait_for()
+        page.get_by_text("整体点击趋势").wait_for()
+        page.screenshot(path=ARTIFACT_DIR / "dashboard-desktop.png", full_page=True)
 
-        assert webhook_receiver.received.wait(timeout=15), "Webhook 未在 15 秒内送达"
-        assert webhook_receiver.signature_valid, "Webhook HMAC 校验失败"
-        assert webhook_receiver.event_type == "link.created", webhook_receiver.event_type
-        assert webhook_receiver.event_id, "Webhook 缺少 Event ID"
-        assert webhook_receiver.payload.get("type") == "link.created", (
-            webhook_receiver.payload
+        access_token = page.evaluate(
+            "localStorage.getItem('shorturl_access_token')",
         )
+        assert access_token, "缺少普通用户 Access Token"
+        admin_response = context.request.get(
+            f"{API_URL}/api/v1/api-keys",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        assert admin_response.status == 403, admin_response.text()
+        metrics_response = context.request.get(f"{API_URL}/metrics")
+        assert metrics_response.status == 404, metrics_response.text()
 
-        page.get_by_role("link", name="开发者").click()
-        page.wait_for_url("**/developer")
-        webhook_panel.get_by_role("button", name="查看投递").click()
-        webhook_panel.get_by_text("已送达").wait_for()
-        page.screenshot(path=ARTIFACT_DIR / "webhook-delivery.png", full_page=True)
-        page.get_by_role("link", name="工作台").click()
+        page.goto(f"{BASE_URL}/developer")
+        page.wait_for_url("**/dashboard")
+        page.goto(f"{BASE_URL}/domains")
         page.wait_for_url("**/dashboard")
 
         page.locator(".recent-list").get_by_role(
-            "link", name="浏览器验收短链",
+            "link",
+            name="浏览器验收短链",
         ).click()
         page.wait_for_url("**/links/**")
         page.wait_for_load_state("networkidle")
         page.get_by_role("heading", name="浏览器验收短链").wait_for()
 
-        request = context.request
         for user_agent in (
             "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0.0.0 Safari/537.36",
             "Googlebot/2.1",
         ):
-            response = request.get(
-                f"{API_URL}/{alias}",
-                headers={"User-Agent": user_agent, "Host": hostname},
+            response = context.request.get(
+                f"{API_URL}/r/{alias}",
+                headers={"User-Agent": user_agent},
                 max_redirects=0,
             )
             assert response.status == 302, response.text()
@@ -247,7 +132,7 @@ def main() -> None:
         page.locator(".summary-primary strong").wait_for()
         total_clicks = page.locator(".summary-primary strong").inner_text()
         assert total_clicks == "3", f"expected 3 clicks, got {total_clicks}"
-        page.screenshot(path=ARTIFACT_DIR / "detail-desktop.png", full_page=True)
+        page.screenshot(path=ARTIFACT_DIR / "link-detail.png", full_page=True)
 
         with page.expect_download() as png_download:
             page.get_by_role("button", name="下载 PNG").click()
@@ -265,14 +150,10 @@ def main() -> None:
 
         mobile = context.new_page()
         mobile.set_viewport_size({"width": 390, "height": 844})
-        mobile.goto(f"{BASE_URL}/links")
+        mobile.goto(f"{BASE_URL}/dashboard")
         mobile.wait_for_load_state("networkidle")
-        mobile.screenshot(path=ARTIFACT_DIR / "links-mobile.png", full_page=True)
-        mobile.goto(f"{BASE_URL}/developer")
-        mobile.wait_for_load_state("networkidle")
-        mobile.locator(".webhook-feature").wait_for()
         mobile.screenshot(
-            path=ARTIFACT_DIR / "developer-mobile.png",
+            path=ARTIFACT_DIR / "dashboard-mobile-390.png",
             full_page=True,
         )
         mobile.set_viewport_size({"width": 320, "height": 844})
@@ -282,24 +163,29 @@ def main() -> None:
             "document.documentElement.scrollWidth <= window.innerWidth",
         ), "320px 页面出现横向溢出"
         mobile.screenshot(
-            path=ARTIFACT_DIR / "developer-mobile-320.png",
+            path=ARTIFACT_DIR / "dashboard-mobile-320.png",
             full_page=True,
         )
 
-        if console_errors:
-            raise AssertionError(f"browser console errors: {console_errors}")
+        unexpected_console_errors = [
+            message
+            for message in console_errors
+            if "status of 403" not in message and "status of 404" not in message
+        ]
+        if unexpected_console_errors:
+            raise AssertionError(
+                f"browser console errors: {unexpected_console_errors}",
+            )
 
         print(
             {
                 "email": email,
                 "alias": alias,
-                "hostname": hostname,
                 "total_clicks": total_clicks,
                 "screenshots": str(ARTIFACT_DIR),
             }
         )
         browser.close()
-        webhook_receiver.close()
 
 
 if __name__ == "__main__":

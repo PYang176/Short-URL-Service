@@ -4,7 +4,7 @@
 
 - `shorturl-app:local`：包含 API、Worker 和迁移二进制，通过不同命令运行。
 - `shorturl-web:latest`：Nginx 托管 Vue 构建产物并代理 API。
-- Prometheus：抓取 API 和 Worker 的 `/metrics`。
+- Prometheus：通过 Docker 内网抓取 API 和 Worker 的独立指标端口。
 - Grafana：自动加载 Prometheus 数据源和 `Short URL Overview` 仪表盘。
 - MySQL：宿主机实例，不放入 Compose。
 
@@ -29,8 +29,10 @@ GRAFANA_ADMIN_PASSWORD
 
 - Prometheus：http://127.0.0.1:19090
 - Grafana：http://127.0.0.1:13000
-- API 指标：http://127.0.0.1:18080/metrics
-- Worker 指标：http://127.0.0.1:18081/metrics
+
+API 与 Worker 的 `/metrics` 只监听容器内网 `:9091`，Compose 不发布该端口。
+用户 Web 和公开 API 无法读取指标。Prometheus 自身只绑定宿主机回环地址，
+Grafana 关闭匿名访问并要求管理员登录。
 
 ## 仪表盘
 

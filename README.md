@@ -4,6 +4,9 @@
 动态二维码、自定义域名、Redis Streams 点击分析和可视化工作台。短链变更
 通过 MySQL 事务型 Outbox 投递为带 HMAC 签名的 Webhook。
 
+普通用户界面只保留短链创建、二维码、跳转和访问分析。域名、API Key、
+Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独立内网端口。
+
 ## 已实现
 
 - 注册、登录、Refresh Token 轮换和重放检测。
@@ -137,7 +140,7 @@ P95/P99 延迟、点击 Stream 长度、Pending 数量、消费速率、ACK 错�
 | API | http://localhost:18080 |
 | Worker 健康检查 | http://localhost:18081/health/live |
 | API 就绪检查 | http://localhost:18080/health/ready |
-| Prometheus 指标 | http://localhost:18080/metrics |
+| Prometheus 指标 | Docker 内网 `api:9091` / `worker:9091`，不对宿主机发布 |
 | Prometheus | http://127.0.0.1:19090 |
 | Grafana | http://127.0.0.1:13000 |
 
@@ -158,12 +161,14 @@ go run .\cmd\migrate up
 终端 1：
 
 ```powershell
+$env:METRICS_ADDR='127.0.0.1:9091'
 go run .\cmd\api
 ```
 
 终端 2：
 
 ```powershell
+$env:METRICS_ADDR='127.0.0.1:9092'
 go run .\cmd\worker
 ```
 
@@ -290,8 +295,11 @@ X-API-Key: sl_live_<prefix>.<secret>
 ```
 
 完整 Secret 只在创建时返回一次，数据库只保存前缀和 SHA-256 哈希。作用域包括
-`links:read`、`links:write` 和 `analytics:read`。开发者页面为 `/developer`，
-OpenAPI 3.1 文件为 `/openapi.yaml`。
+`links:read`、`links:write` 和 `analytics:read`。API Key 和开发者页面只对
+平台管理员开放；普通用户直接调用管理接口会收到 403。
+
+平台管理员角色保存在 `users.role=2`。角色变更后需要重新登录，使新签发的
+Access Token 包含管理员权限。
 
 Webhook 支持 `link.created`、`link.updated` 和 `link.deleted`。创建端点时
 返回一次 `whsec_...` Secret，后续请求头包含 Event ID、事件类型、Unix 时间戳
@@ -302,7 +310,7 @@ sha256=HEX(HMAC-SHA256(secret, timestamp + "." + body))
 ```
 
 只有 2xx 算成功。失败按有上限的指数退避重试，达到 `WEBHOOK_MAX_ATTEMPTS`
-后终止任务并自动停用端点。开发页面可以查看最近投递状态。
+后终止任务并自动停用端点。管理员页面可以查看最近投递状态。
 
 默认 `GET /api/v1/links/{id}/qr` 返回 PNG，可用：
 
@@ -360,10 +368,8 @@ $env:SHORTURL_WEBHOOK_TARGET_HOST='127.0.0.1'
 python web\scripts\e2e.py
 ```
 
-覆盖注册、域名验证、自定义域名短链、UA 分类、分析、二维码下载、编辑链接
-和移动端布局。脚本会启动本地 HTTP 接收端，验证 Webhook 创建、HMAC 签名、
-`link.created` 事件和页面投递状态。API 与 Worker 直接运行在宿主机时使用
-`127.0.0.1`；通过 Compose 运行时使用默认的 `host.docker.internal`。
+覆盖免登录试用、注册认领、普通用户导航权限、后台接口 403、指标接口不可见、
+短链创建、UA 分类、访问分析、二维码下载、编辑链接和移动端布局。
 
 ## 压测结果
 
@@ -412,3 +418,4 @@ deploy               Docker Compose
 - 自定义域名生产环境尚未接 Caddy 自动证书。
 - 暂未实现文件夹、标签、管理员治理和团队角色。
 - 自定义域名的管理入口仍由平台域名提供；自定义域名根路径由 API 处理。
+- Prometheus 指标只监听容器内网专用端口；Grafana 保留管理员登录。

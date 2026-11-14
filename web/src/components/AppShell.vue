@@ -14,12 +14,19 @@ const initials = computed(() => {
   return name ? name.slice(0, 1).toUpperCase() : 'U'
 })
 
-const navigation = [
-  { label: '工作台', to: '/dashboard' },
-  { label: '短链接', to: '/links' },
-  { label: '域名', to: '/domains' },
-  { label: '开发者', to: '/developer' },
-]
+const navigation = computed(() => {
+  const items = [
+    { label: '工作台', to: '/dashboard' },
+    { label: '短链接', to: '/links' },
+  ]
+  if (user.value?.role === 2) {
+    items.push(
+      { label: '域名', to: '/domains' },
+      { label: '开发者', to: '/developer' },
+    )
+  }
+  return items
+})
 
 // signOut 清除登录态并返回登录页
 async function signOut(): Promise<void> {
