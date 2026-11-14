@@ -25,6 +25,7 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 - 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
 - API Key 生命周期、作用域认证、撤销、按 Key 限流和 OpenAPI 3.1 文档。
 - Webhook 端点管理、事务型 Outbox、HMAC-SHA256 签名、重试和自动停用。
+- 公开滥用举报、管理员下架、目标域名黑名单和后台操作审计。
 - 动态二维码 PNG/SVG，二维码指向稳定短链并标记扫码来源。
 - 自定义域名添加、TXT/CNAME 验证和 Host 跳转。
 - Vue 3 管理端、项目内 SVG 趋势图和 CSS 维度排行。
@@ -208,6 +209,7 @@ demo12345
 - 刷新 Token：默认 30 次/分钟/IP，Redis 故障时拒绝。
 - 管理 API：默认 120 次/分钟/工作空间。
 - 创建短链：默认 30 次/分钟/工作空间。
+- 公开举报：默认 10 次/小时/IP，Redis 故障时拒绝。
 - 公开跳转：默认 600 次/分钟/IP。
 
 超限返回：
@@ -269,6 +271,13 @@ POST   /api/v1/webhooks
 DELETE /api/v1/webhooks/{id}
 GET    /api/v1/webhooks/{id}/deliveries
 
+POST   /api/v1/abuse/reports
+GET    /api/v1/abuse/reports
+POST   /api/v1/abuse/reports/{id}/resolve
+GET    /api/v1/abuse/blocked-domains
+POST   /api/v1/abuse/blocked-domains
+DELETE /api/v1/abuse/blocked-domains/{id}
+
 POST   /api/v1/links
 GET    /api/v1/links
 GET    /api/v1/links/{id}
@@ -300,6 +309,13 @@ X-API-Key: sl_live_<prefix>.<secret>
 
 平台管理员角色保存在 `users.role=2`。角色变更后需要重新登录，使新签发的
 Access Token 包含管理员权限。
+
+滥用治理：
+
+- 访客可在 `/report` 提交钓鱼、恶意软件、垃圾推广、仿冒或其他举报。
+- 管理员在 `/admin/abuse` 审核举报；确认违规时同一事务内停用短链。
+- 下架提交后主动失效 Redis 跳转缓存，并记录管理员审计日志。
+- 域名黑名单自动匹配精确域名及其子域名，并同时阻止后续创建和修改。
 
 Webhook 支持 `link.created`、`link.updated` 和 `link.deleted`。创建端点时
 返回一次 `whsec_...` Secret，后续请求头包含 Event ID、事件类型、Unix 时间戳
@@ -369,7 +385,7 @@ python web\scripts\e2e.py
 ```
 
 覆盖免登录试用、注册认领、普通用户导航权限、后台接口 403、指标接口不可见、
-短链创建、UA 分类、访问分析、二维码下载、编辑链接和移动端布局。
+短链创建、公开举报、UA 分类、访问分析、二维码下载、编辑链接和移动端布局。
 
 ## 压测结果
 
@@ -400,6 +416,7 @@ internal/domain      自定义域名
 internal/analytics   点击事件和分析
 internal/trial       游客会话、配额和临时链接
 internal/webhook     Webhook 配置、Outbox 投递和签名
+internal/abuse       滥用举报、目标黑名单和审计日志
 internal/platform    配置、MySQL、Redis、限流、幂等
 internal/transport   HTTP 路由与中间件
 web                  Vue 3 管理端
@@ -416,6 +433,6 @@ deploy               Docker Compose
 - 浏览器当前使用 `localStorage` 保存 Access Token 和 Refresh Token；CSP
   可降低脚本注入风险，但不能替代 HttpOnly Cookie 和 CSRF 防护。
 - 自定义域名生产环境尚未接 Caddy 自动证书。
-- 暂未实现文件夹、标签、管理员治理和团队角色。
+- 暂未实现文件夹、标签、用户封禁和团队角色。
 - 自定义域名的管理入口仍由平台域名提供；自定义域名根路径由 API 处理。
 - Prometheus 指标只监听容器内网专用端口；Grafana 保留管理员登录。

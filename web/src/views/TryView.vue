@@ -234,6 +234,8 @@ onMounted(loadTrialLinks)
       <p class="trial-register-note">
         注册后可进入完整工作台，管理长期链接、二维码和点击分析。
         <RouterLink to="/register">创建账号</RouterLink>
+        ·
+        <RouterLink to="/report">举报违规短链</RouterLink>
       </p>
     </section>
   </main>

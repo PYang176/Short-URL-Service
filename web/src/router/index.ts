@@ -24,6 +24,12 @@ const router = createRouter({
       meta: { guestOnly: true, title: '免登录试用' },
     },
     {
+      path: '/report',
+      name: 'report-abuse',
+      component: () => import('@/views/ReportAbuseView.vue'),
+      meta: { title: '举报违规短链' },
+    },
+    {
       path: '/',
       component: () => import('@/components/AppShell.vue'),
       meta: { requiresAuth: true },
@@ -62,6 +68,12 @@ const router = createRouter({
           name: 'developer',
           component: () => import('@/views/DeveloperView.vue'),
           meta: { requiresAuth: true, requiresAdmin: true, title: '开发者' },
+        },
+        {
+          path: 'admin/abuse',
+          name: 'abuse-admin',
+          component: () => import('@/views/AbuseAdminView.vue'),
+          meta: { requiresAuth: true, requiresAdmin: true, title: '滥用审核' },
         },
       ],
     },

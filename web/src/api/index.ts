@@ -18,6 +18,11 @@ import type {
   APIKeyScope,
   CreateAPIKeyResponse,
   CreateWebhookResponse,
+  AbuseReport,
+  AbuseReportListResponse,
+  BlockedDomain,
+  BlockedDomainListResponse,
+  CreateAbuseReportResponse,
   WebhookDeliveryListResponse,
   WebhookEndpointListResponse,
 } from './types'
@@ -210,6 +215,77 @@ export function listWebhookDeliveries(
 ): Promise<WebhookDeliveryListResponse> {
   return requestJSON<WebhookDeliveryListResponse>(
     `/api/v1/webhooks/${encodeURIComponent(id)}/deliveries?limit=${limit}`,
+  )
+}
+
+// reportAbuse 提交公开的违规短链举报
+export function reportAbuse(
+  shortURL: string,
+  reason: string,
+  details: string,
+): Promise<CreateAbuseReportResponse> {
+  return requestJSON<CreateAbuseReportResponse>(
+    '/api/v1/abuse/reports',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        short_url: shortURL,
+        reason,
+        details,
+      }),
+    },
+    false,
+  )
+}
+
+// listAbuseReports 获取管理员举报队列
+export function listAbuseReports(
+  status = 1,
+  limit = 20,
+): Promise<AbuseReportListResponse> {
+  return requestJSON<AbuseReportListResponse>(
+    `/api/v1/abuse/reports?status=${status}&limit=${limit}`,
+  )
+}
+
+// resolveAbuseReport 处理举报并返回最终状态
+export function resolveAbuseReport(
+  id: string,
+  decision: 'takedown' | 'reject',
+  note: string,
+): Promise<AbuseReport> {
+  return requestJSON<AbuseReport>(
+    `/api/v1/abuse/reports/${encodeURIComponent(id)}/resolve`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ decision, note }),
+    },
+  )
+}
+
+// listBlockedDomains 获取当前目标域名黑名单
+export function listBlockedDomains(): Promise<BlockedDomainListResponse> {
+  return requestJSON<BlockedDomainListResponse>(
+    '/api/v1/abuse/blocked-domains',
+  )
+}
+
+// addBlockedDomain 添加目标域名黑名单
+export function addBlockedDomain(
+  hostname: string,
+  reason: string,
+): Promise<BlockedDomain> {
+  return requestJSON<BlockedDomain>('/api/v1/abuse/blocked-domains', {
+    method: 'POST',
+    body: JSON.stringify({ hostname, reason }),
+  })
+}
+
+// removeBlockedDomain 停用目标域名黑名单
+export function removeBlockedDomain(id: string): Promise<void> {
+  return requestJSON<void>(
+    `/api/v1/abuse/blocked-domains/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
   )
 }
 

@@ -106,6 +106,17 @@ def main() -> None:
         page.goto(f"{BASE_URL}/domains")
         page.wait_for_url("**/dashboard")
 
+        page.goto(f"{BASE_URL}/report")
+        page.wait_for_load_state("networkidle")
+        page.get_by_label("可疑短链").fill(f"{BASE_URL}/r/{alias}")
+        page.get_by_label("风险类型").select_option("phishing")
+        page.get_by_label("补充说明，可选").fill("浏览器验收举报")
+        page.get_by_role("button", name="提交举报").click()
+        page.get_by_role("heading", name="举报已提交").wait_for()
+        assert page.locator("code").inner_text(), "举报编号为空"
+        page.goto(f"{BASE_URL}/dashboard")
+        page.wait_for_load_state("networkidle")
+
         page.locator(".recent-list").get_by_role(
             "link",
             name="浏览器验收短链",

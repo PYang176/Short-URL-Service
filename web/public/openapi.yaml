@@ -16,6 +16,7 @@ tags:
   - name: Analytics
   - name: API Keys
   - name: Webhooks
+  - name: Abuse
 paths:
   /api/v1/trial/links:
     get:
@@ -240,6 +241,148 @@ paths:
                       $ref: "#/components/schemas/WebhookDelivery"
         "403":
           description: 当前账号不是平台管理员
+  /api/v1/abuse/reports:
+    post:
+      tags: [Abuse]
+      summary: 公开提交违规短链举报
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAbuseReportRequest"
+      responses:
+        "201":
+          description: 举报已受理
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAbuseReportResponse"
+        "404":
+          description: 短链不存在或已停用
+        "429":
+          description: 举报提交频率超限
+    get:
+      tags: [Abuse]
+      summary: 查询管理员待处理举报队列
+      description: 仅平台管理员可访问。
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: integer
+            enum: [1, 2, 3]
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: 举报队列
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AbuseReport"
+        "403":
+          description: 当前账号不是平台管理员
+  /api/v1/abuse/reports/{id}/resolve:
+    post:
+      tags: [Abuse]
+      summary: 处理举报并选择下架或驳回
+      description: 仅平台管理员可访问。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveAbuseReportRequest"
+      responses:
+        "200":
+          description: 处理后的举报
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AbuseReport"
+        "403":
+          description: 当前账号不是平台管理员
+        "404":
+          description: 举报不存在
+        "409":
+          description: 举报已经处理
+  /api/v1/abuse/blocked-domains:
+    get:
+      tags: [Abuse]
+      summary: 查询目标域名黑名单
+      description: 仅平台管理员可访问。
+      responses:
+        "200":
+          description: 有效目标域名黑名单
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BlockedDomain"
+        "403":
+          description: 当前账号不是平台管理员
+    post:
+      tags: [Abuse]
+      summary: 添加目标域名黑名单
+      description: 仅平台管理员可访问。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddBlockedDomainRequest"
+      responses:
+        "201":
+          description: 已添加的目标域名规则
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedDomain"
+        "403":
+          description: 当前账号不是平台管理员
+  /api/v1/abuse/blocked-domains/{id}:
+    delete:
+      tags: [Abuse]
+      summary: 解除目标域名黑名单
+      description: 仅平台管理员可访问。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: 已解除
+        "403":
+          description: 当前账号不是平台管理员
+        "404":
+          description: 黑名单规则不存在
 components:
   securitySchemes:
     BearerAuth:
@@ -406,6 +549,114 @@ components:
         delivered_at:
           type: [string, "null"]
           format: date-time
+        created_at:
+          type: string
+          format: date-time
+    CreateAbuseReportRequest:
+      type: object
+      additionalProperties: false
+      required: [short_url, reason]
+      properties:
+        short_url:
+          type: string
+          maxLength: 2048
+        reason:
+          type: string
+          enum: [phishing, malware, spam, impersonation, other]
+        details:
+          type: string
+          maxLength: 1000
+    CreateAbuseReportResponse:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: integer
+          enum: [1]
+    ResolveAbuseReportRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [takedown, reject]
+        note:
+          type: string
+          maxLength: 1000
+    AbuseReport:
+      type: object
+      required:
+        - id
+        - link_id
+        - link_title
+        - link_slug
+        - domain_hostname
+        - destination_url
+        - link_status
+        - reason
+        - details
+        - status
+        - resolution_note
+        - resolved_at
+        - created_at
+      properties:
+        id:
+          type: string
+        link_id:
+          type: string
+        link_title:
+          type: string
+        link_slug:
+          type: string
+        domain_hostname:
+          type: string
+        destination_url:
+          type: string
+          format: uri
+        link_status:
+          type: integer
+          enum: [1, 2]
+        reason:
+          type: string
+          enum: [phishing, malware, spam, impersonation, other]
+        details:
+          type: string
+        status:
+          type: integer
+          enum: [1, 2, 3]
+        resolution_note:
+          type: string
+        resolved_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    AddBlockedDomainRequest:
+      type: object
+      additionalProperties: false
+      required: [hostname, reason]
+      properties:
+        hostname:
+          type: string
+          maxLength: 253
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    BlockedDomain:
+      type: object
+      required: [id, hostname, reason, created_at]
+      properties:
+        id:
+          type: string
+        hostname:
+          type: string
+        reason:
+          type: string
         created_at:
           type: string
           format: date-time

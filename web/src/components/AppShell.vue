@@ -23,6 +23,7 @@ const navigation = computed(() => {
     items.push(
       { label: '域名', to: '/domains' },
       { label: '开发者', to: '/developer' },
+      { label: '治理', to: '/admin/abuse' },
     )
   }
   return items

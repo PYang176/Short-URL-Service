@@ -262,6 +262,47 @@ export interface WebhookDeliveryListResponse {
   items: WebhookDelivery[]
 }
 
+// AbuseReport 是管理员处理的违规短链举报
+export interface AbuseReport {
+  id: string
+  link_id: string
+  link_title: string
+  link_slug: string
+  domain_hostname: string
+  destination_url: string
+  link_status: number
+  reason: string
+  details: string
+  status: number
+  resolution_note: string
+  resolved_at: string | null
+  created_at: string
+}
+
+// AbuseReportListResponse 是举报队列响应
+export interface AbuseReportListResponse {
+  items: AbuseReport[]
+}
+
+// CreateAbuseReportResponse 是公开举报提交结果
+export interface CreateAbuseReportResponse {
+  id: string
+  status: number
+}
+
+// BlockedDomain 是禁止作为短链目标的域名规则
+export interface BlockedDomain {
+  id: string
+  hostname: string
+  reason: string
+  created_at: string
+}
+
+// BlockedDomainListResponse 是黑名单列表响应
+export interface BlockedDomainListResponse {
+  items: BlockedDomain[]
+}
+
 // ApiErrorPayload 是后端统一错误响应
 export interface ApiErrorPayload {
   error?: {
