@@ -54,6 +54,8 @@ type Config struct {
 type HTTPConfig struct {
 	// Addr 是 API 或 Worker 健康服务监听地址
 	Addr string
+	// MetricsAddr 是只供内网 Prometheus 抓取的指标监听地址
+	MetricsAddr string
 	// ReadTimeout 是读取完整请求的最长时间
 	ReadTimeout time.Duration
 	// WriteTimeout 是写入完整响应的最长时间
@@ -208,6 +210,7 @@ func Load() (Config, error) {
 		PublicBaseURL: getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
 		HTTP: HTTPConfig{
 			Addr:            getEnv("HTTP_ADDR", ":8080"),
+			MetricsAddr:     getEnv("METRICS_ADDR", "127.0.0.1:9091"),
 			ReadTimeout:     getDuration("HTTP_READ_TIMEOUT", 10*time.Second),
 			WriteTimeout:    getDuration("HTTP_WRITE_TIMEOUT", 15*time.Second),
 			IdleTimeout:     getDuration("HTTP_IDLE_TIMEOUT", 60*time.Second),
@@ -304,6 +307,12 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.HTTP.Addr) == "" {
 		return fmt.Errorf("HTTP_ADDR 不能为空")
+	}
+	if strings.TrimSpace(c.HTTP.MetricsAddr) == "" {
+		return fmt.Errorf("METRICS_ADDR 不能为空")
+	}
+	if c.HTTP.MetricsAddr == c.HTTP.Addr {
+		return fmt.Errorf("METRICS_ADDR 必须与 HTTP_ADDR 分开")
 	}
 	if strings.TrimSpace(c.MySQL.DSN) == "" {
 		return fmt.Errorf("MYSQL_DSN 不能为空")

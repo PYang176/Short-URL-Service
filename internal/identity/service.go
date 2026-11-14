@@ -97,7 +97,13 @@ func (s *Service) Register(ctx context.Context, email, password, displayName str
 		return nil, err
 	}
 
-	accessToken, accessExpires, err := s.tokens.Issue(user.ID, workspace.ID, MemberRoleOwner, now)
+	accessToken, accessExpires, err := s.tokens.Issue(
+		user.ID,
+		workspace.ID,
+		MemberRoleOwner,
+		user.Role,
+		now,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +203,13 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*AuthResult
 		return nil, err
 	}
 
-	accessToken, accessExpires, err := s.tokens.Issue(user.ID, workspace.ID, MemberRoleOwner, now)
+	accessToken, accessExpires, err := s.tokens.Issue(
+		user.ID,
+		workspace.ID,
+		MemberRoleOwner,
+		user.Role,
+		now,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +277,13 @@ func (s *Service) newSession(ctx context.Context, user *User, workspace *Workspa
 	if err := s.repo.CreateRefreshToken(ctx, refreshToken); err != nil {
 		return nil, err
 	}
-	accessToken, accessExpires, err := s.tokens.Issue(user.ID, workspace.ID, MemberRoleOwner, now)
+	accessToken, accessExpires, err := s.tokens.Issue(
+		user.ID,
+		workspace.ID,
+		MemberRoleOwner,
+		user.Role,
+		now,
+	)
 	if err != nil {
 		return nil, err
 	}

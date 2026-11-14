@@ -23,6 +23,8 @@ type Claims struct {
 	WorkspaceID string `json:"wid"`
 	// Role 是用户在工作空间中的角色
 	Role uint8 `json:"role"`
+	// PlatformRole 是平台级角色，用于限制后台管理能力
+	PlatformRole uint8 `json:"platform_role"`
 	jwt.RegisteredClaims
 }
 
@@ -37,12 +39,17 @@ func NewTokenManager(secret string, ttl time.Duration) *TokenManager {
 	return &TokenManager{secret: []byte(secret), ttl: ttl}
 }
 
-// Issue 为指定用户和工作空间签发 Access Token
-func (m *TokenManager) Issue(userID, workspaceID string, role uint8, now time.Time) (string, time.Time, error) {
+// Issue 为指定用户和工作空间签发包含平台角色的 Access Token
+func (m *TokenManager) Issue(
+	userID, workspaceID string,
+	memberRole, platformRole uint8,
+	now time.Time,
+) (string, time.Time, error) {
 	expires := now.Add(m.ttl)
 	claims := Claims{
-		WorkspaceID: workspaceID,
-		Role:        role,
+		WorkspaceID:  workspaceID,
+		Role:         memberRole,
+		PlatformRole: platformRole,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    tokenIssuer,
 			Subject:   userID,

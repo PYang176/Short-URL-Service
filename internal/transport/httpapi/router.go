@@ -6,8 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/PYang176/Short-URL-Service/internal/analytics"
 	"github.com/PYang176/Short-URL-Service/internal/apikey"
@@ -27,8 +25,6 @@ type Dependencies struct {
 	Config config.Config
 	// Logger 是结构化访问和错误日志
 	Logger *slog.Logger
-	// Registry 是本进程独立的 Prometheus 注册表
-	Registry *prometheus.Registry
 	// Health 是存活和就绪处理器
 	Health *observability.Health
 	// Metrics 是 HTTP 指标中间件
@@ -85,8 +81,6 @@ func NewRouter(deps Dependencies) *gin.Engine {
 
 	router.GET("/health/live", deps.Health.Live)
 	router.GET("/health/ready", deps.Health.Ready)
-	router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(deps.Registry, promhttp.HandlerOpts{})))
-
 	api := router.Group("/api/v1")
 	api.Use(BodyLimit(deps.Config.Security.MaxBodyBytes), JSONContentType())
 	api.GET("/health", deps.Health.Live)
@@ -148,18 +142,21 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	}
 	protected.GET("/me", deps.Identity.Profile)
 	protected.PATCH("/me", deps.Identity.UpdateProfile)
-	protected.GET("/api-keys", deps.APIKeys.List)
-	protected.POST("/api-keys", deps.APIKeys.Create)
-	protected.DELETE("/api-keys/:id", deps.APIKeys.Revoke)
-	protected.GET("/webhooks", deps.Webhooks.List)
-	protected.POST("/webhooks", deps.Webhooks.Create)
-	protected.DELETE("/webhooks/:id", deps.Webhooks.Disable)
-	protected.GET("/webhooks/:id/deliveries", deps.Webhooks.ListDeliveries)
 	protected.POST("/trial/claim", deps.Trial.Claim)
-	protected.GET("/domains", deps.Domains.List)
-	protected.POST("/domains", deps.Domains.Add)
-	protected.POST("/domains/:id/verify", deps.Domains.Verify)
-	protected.DELETE("/domains/:id", deps.Domains.Delete)
+
+	admin := protected.Group("")
+	admin.Use(RequirePlatformAdmin())
+	admin.GET("/api-keys", deps.APIKeys.List)
+	admin.POST("/api-keys", deps.APIKeys.Create)
+	admin.DELETE("/api-keys/:id", deps.APIKeys.Revoke)
+	admin.GET("/webhooks", deps.Webhooks.List)
+	admin.POST("/webhooks", deps.Webhooks.Create)
+	admin.DELETE("/webhooks/:id", deps.Webhooks.Disable)
+	admin.GET("/webhooks/:id/deliveries", deps.Webhooks.ListDeliveries)
+	admin.GET("/domains", deps.Domains.List)
+	admin.POST("/domains", deps.Domains.Add)
+	admin.POST("/domains/:id/verify", deps.Domains.Verify)
+	admin.DELETE("/domains/:id", deps.Domains.Delete)
 
 	resources := api.Group("")
 	resources.Use(RequireAuth(deps.Tokens, deps.APIKeyAuth))

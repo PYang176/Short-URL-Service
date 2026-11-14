@@ -22,6 +22,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HTTP.Addr != ":8080" {
 		t.Fatalf("HTTP.Addr = %q, want :8080", cfg.HTTP.Addr)
 	}
+	if cfg.HTTP.MetricsAddr != "127.0.0.1:9091" {
+		t.Fatalf("HTTP.MetricsAddr = %q, want internal metrics address", cfg.HTTP.MetricsAddr)
+	}
 	if cfg.Env != EnvDevelopment {
 		t.Fatalf("Env = %q, want %q", cfg.Env, EnvDevelopment)
 	}
@@ -35,7 +38,7 @@ func TestValidateRejectsInvalidPublicURL(t *testing.T) {
 	cfg := Config{
 		Env:           EnvDevelopment,
 		PublicBaseURL: "localhost:8080",
-		HTTP:          HTTPConfig{Addr: ":8080"},
+		HTTP:          HTTPConfig{Addr: ":8080", MetricsAddr: "127.0.0.1:9091"},
 		MySQL:         MySQLConfig{DSN: "dsn", MaxOpenConns: 1},
 		Redis:         RedisConfig{Addr: "localhost:6379", PoolSize: 1},
 	}
@@ -50,7 +53,7 @@ func TestValidateProductionRequiresStrongJWTSecret(t *testing.T) {
 	cfg := Config{
 		Env:           EnvProduction,
 		PublicBaseURL: "https://short.example.com",
-		HTTP:          HTTPConfig{Addr: ":8080"},
+		HTTP:          HTTPConfig{Addr: ":8080", MetricsAddr: "127.0.0.1:9091"},
 		Auth:          AuthConfig{JWTSecret: "too-short"},
 		Analytics:     AnalyticsConfig{HashSecret: "production-analytics-secret-0123456789abcdef"},
 		MySQL:         MySQLConfig{DSN: "dsn", MaxOpenConns: 1},
@@ -67,7 +70,7 @@ func TestValidateProductionRejectsPlaceholderSecrets(t *testing.T) {
 	cfg := Config{
 		Env:           EnvProduction,
 		PublicBaseURL: "https://short.example.com",
-		HTTP:          HTTPConfig{Addr: ":8080"},
+		HTTP:          HTTPConfig{Addr: ":8080", MetricsAddr: "127.0.0.1:9091"},
 		Auth: AuthConfig{
 			JWTSecret: "replace-with-at-least-32-random-bytes",
 		},
@@ -88,7 +91,7 @@ func TestValidateRejectsMissingSecrets(t *testing.T) {
 	cfg := Config{
 		Env:           EnvDevelopment,
 		PublicBaseURL: "http://localhost:8080",
-		HTTP:          HTTPConfig{Addr: ":8080"},
+		HTTP:          HTTPConfig{Addr: ":8080", MetricsAddr: "127.0.0.1:9091"},
 		MySQL:         MySQLConfig{DSN: "dsn", MaxOpenConns: 1},
 		Redis:         RedisConfig{Addr: "localhost:6379", PoolSize: 1},
 	}
@@ -98,13 +101,29 @@ func TestValidateRejectsMissingSecrets(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsSharedMetricsAddress 验证指标监听不能复用业务 HTTP 端口
+func TestLoadRejectsSharedMetricsAddress(t *testing.T) {
+	t.Setenv("APP_ENV", EnvDevelopment)
+	t.Setenv("PUBLIC_BASE_URL", "http://localhost:8080")
+	t.Setenv("HTTP_ADDR", ":8080")
+	t.Setenv("METRICS_ADDR", ":8080")
+	t.Setenv("MYSQL_DSN", "user:pass@tcp(localhost:3306)/short_url")
+	t.Setenv("REDIS_ADDR", "localhost:6379")
+	t.Setenv("JWT_SECRET", "local-jwt-secret-0123456789abcdef")
+	t.Setenv("ANALYTICS_HASH_SECRET", "local-analytics-secret-0123456789abcdef")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want shared metrics address rejection")
+	}
+}
+
 // TestValidateRejectsInvalidTrialConfig 验证游客有效期、清理周期和配额边界
 func TestValidateRejectsInvalidTrialConfig(t *testing.T) {
 	validRule := RateLimitRule{Limit: 1, Window: time.Minute}
 	base := Config{
 		Env:           EnvDevelopment,
 		PublicBaseURL: "http://localhost:8080",
-		HTTP:          HTTPConfig{Addr: ":8080"},
+		HTTP:          HTTPConfig{Addr: ":8080", MetricsAddr: "127.0.0.1:9091"},
 		Auth:          AuthConfig{JWTSecret: "local-jwt-secret-0123456789abcdef"},
 		MySQL:         MySQLConfig{DSN: "dsn", MaxOpenConns: 1},
 		Redis:         RedisConfig{Addr: "localhost:6379", PoolSize: 1},
@@ -181,7 +200,7 @@ func TestValidateRejectsPrivateWebhookTargetsInProduction(t *testing.T) {
 	cfg := Config{
 		Env:           EnvProduction,
 		PublicBaseURL: "https://short.example.com",
-		HTTP:          HTTPConfig{Addr: ":8080"},
+		HTTP:          HTTPConfig{Addr: ":8080", MetricsAddr: "127.0.0.1:9091"},
 		Auth: AuthConfig{
 			JWTSecret: "production-jwt-secret-0123456789abcdef",
 		},

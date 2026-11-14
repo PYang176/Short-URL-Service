@@ -9,6 +9,8 @@ const (
 	ContextWorkspaceID = "workspace_id"
 	// ContextMemberRole 是 Gin 上下文中的工作空间角色键
 	ContextMemberRole = "member_role"
+	// ContextUserRole 是 Gin 上下文中的平台角色键
+	ContextUserRole = "user_role"
 )
 
 const (

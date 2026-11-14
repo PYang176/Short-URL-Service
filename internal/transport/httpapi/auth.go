@@ -72,6 +72,20 @@ func RequireAuth(
 		c.Set(identity.ContextUserID, claims.Subject)
 		c.Set(identity.ContextWorkspaceID, claims.WorkspaceID)
 		c.Set(identity.ContextMemberRole, claims.Role)
+		c.Set(identity.ContextUserRole, claims.PlatformRole)
+		c.Next()
+	}
+}
+
+// RequirePlatformAdmin 只允许平台管理员访问后台配置接口
+func RequirePlatformAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, ok := c.Get(identity.ContextUserRole)
+		userRole, valid := role.(uint8)
+		if !ok || !valid || userRole != identity.UserRoleAdmin {
+			abortForbidden(c, "需要平台管理员权限")
+			return
+		}
 		c.Next()
 	}
 }

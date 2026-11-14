@@ -11,7 +11,13 @@ func TestTokenManagerIssueAndParse(t *testing.T) {
 	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 	manager := NewTokenManager("0123456789abcdef0123456789abcdef", 15*time.Minute)
 
-	token, expiresAt, err := manager.Issue("user-1", "workspace-1", MemberRoleOwner, now)
+	token, expiresAt, err := manager.Issue(
+		"user-1",
+		"workspace-1",
+		MemberRoleOwner,
+		UserRoleAdmin,
+		now,
+	)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -23,7 +29,9 @@ func TestTokenManagerIssueAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
-	if claims.Subject != "user-1" || claims.WorkspaceID != "workspace-1" {
+	if claims.Subject != "user-1" ||
+		claims.WorkspaceID != "workspace-1" ||
+		claims.PlatformRole != UserRoleAdmin {
 		t.Fatalf("claims = %+v, want user and workspace IDs", claims)
 	}
 }
@@ -32,7 +40,13 @@ func TestTokenManagerIssueAndParse(t *testing.T) {
 func TestTokenManagerRejectsExpiredToken(t *testing.T) {
 	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 	manager := NewTokenManager("0123456789abcdef0123456789abcdef", time.Minute)
-	token, _, err := manager.Issue("user-1", "workspace-1", MemberRoleOwner, now)
+	token, _, err := manager.Issue(
+		"user-1",
+		"workspace-1",
+		MemberRoleOwner,
+		UserRoleUser,
+		now,
+	)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}

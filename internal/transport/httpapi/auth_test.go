@@ -17,7 +17,13 @@ import (
 func TestRequireAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	manager := identity.NewTokenManager("0123456789abcdef0123456789abcdef", time.Minute)
-	token, _, err := manager.Issue("user-1", "workspace-1", identity.MemberRoleOwner, time.Now().UTC())
+	token, _, err := manager.Issue(
+		"user-1",
+		"workspace-1",
+		identity.MemberRoleOwner,
+		identity.UserRoleAdmin,
+		time.Now().UTC(),
+	)
 	if err != nil {
 		t.Fatalf("Issue() error = %v", err)
 	}
@@ -44,6 +50,64 @@ func TestRequireAuth(t *testing.T) {
 	}
 	if response.Header().Get("X-Request-ID") == "" {
 		t.Fatal("X-Request-ID is empty")
+	}
+}
+
+// TestRequirePlatformAdmin 验证普通用户不能访问后台，管理员可以访问
+func TestRequirePlatformAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manager := identity.NewTokenManager("0123456789abcdef0123456789abcdef", time.Minute)
+	now := time.Now().UTC()
+	userToken, _, err := manager.Issue(
+		"user-1",
+		"workspace-1",
+		identity.MemberRoleOwner,
+		identity.UserRoleUser,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Issue(user) error = %v", err)
+	}
+	adminToken, _, err := manager.Issue(
+		"admin-1",
+		"workspace-admin",
+		identity.MemberRoleOwner,
+		identity.UserRoleAdmin,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("Issue(admin) error = %v", err)
+	}
+
+	router := gin.New()
+	router.Use(RequestID())
+	router.GET(
+		"/admin",
+		RequireAuth(manager),
+		RequirePlatformAdmin(),
+		func(c *gin.Context) {
+			c.Status(http.StatusNoContent)
+		},
+	)
+
+	tests := []struct {
+		name   string
+		token  string
+		status int
+	}{
+		{name: "普通用户", token: userToken, status: http.StatusForbidden},
+		{name: "平台管理员", token: adminToken, status: http.StatusNoContent},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/admin", nil)
+			request.Header.Set("Authorization", "Bearer "+test.token)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d; body=%s", response.Code, test.status, response.Body.String())
+			}
+		})
 	}
 }
 

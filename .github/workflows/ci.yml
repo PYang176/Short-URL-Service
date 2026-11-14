@@ -120,7 +120,6 @@ jobs:
       DOMAIN_VERIFY_MODE: mock
       CUSTOM_DOMAIN_CNAME: links.localhost
       WEBHOOK_ALLOW_PRIVATE_TARGETS: "true"
-      SHORTURL_WEBHOOK_TARGET_HOST: 127.0.0.1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -148,8 +147,8 @@ jobs:
           go build -o /tmp/shorturl-worker ./cmd/worker
       - name: Start services
         run: |
-          HTTP_ADDR=:18080 /tmp/shorturl-api > /tmp/api.log 2>&1 &
-          HTTP_ADDR=:18081 /tmp/shorturl-worker > /tmp/worker.log 2>&1 &
+          HTTP_ADDR=:18080 METRICS_ADDR=127.0.0.1:19091 /tmp/shorturl-api > /tmp/api.log 2>&1 &
+          HTTP_ADDR=:18081 METRICS_ADDR=127.0.0.1:19092 /tmp/shorturl-worker > /tmp/worker.log 2>&1 &
           cd web
           npm run dev > /tmp/web.log 2>&1 &
           cd ..

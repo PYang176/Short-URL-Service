@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -87,11 +88,16 @@ func run() error {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-
-	server := &http.Server{
+	healthServer := &http.Server{
 		Addr:              cfg.HTTP.Addr,
 		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	metricsServer := &http.Server{
+		Addr:              cfg.HTTP.MetricsAddr,
+		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -143,38 +149,110 @@ func run() error {
 	)
 	go trialCleaner.Run(workerCtx)
 
-	serverErrCh := make(chan error, 1)
+	type serverResult struct {
+		name string
+		err  error
+	}
+	serverErrCh := make(chan serverResult, 2)
 	go func() {
 		logger.Info("Worker 服务启动", "health_addr", cfg.HTTP.Addr, "env", cfg.Env)
-		serverErrCh <- server.ListenAndServe()
+		serverErrCh <- serverResult{
+			name: "Worker 健康",
+			err:  healthServer.ListenAndServe(),
+		}
+	}()
+	go func() {
+		logger.Info("Worker 指标服务启动", "metrics_addr", cfg.HTTP.MetricsAddr)
+		serverErrCh <- serverResult{
+			name: "Worker 指标",
+			err:  metricsServer.ListenAndServe(),
+		}
 	}()
 
 	select {
-	case err := <-serverErrCh:
+	case first := <-serverErrCh:
 		stopWorkers()
+		shutdownErr := shutdownWorkerServers(
+			cfg.HTTP.ShutdownTimeout,
+			healthServer,
+			metricsServer,
+		)
+		second := <-serverErrCh
 		firstWorkerErr := <-workerErrCh
 		secondWorkerErr := <-workerErrCh
-		if !errors.Is(err, http.ErrServerClosed) {
-			return errors.Join(err, firstWorkerErr, secondWorkerErr)
-		}
-		return errors.Join(firstWorkerErr, secondWorkerErr)
+		return errors.Join(
+			workerServerError(first.name, first.err),
+			workerServerError(second.name, second.err),
+			firstWorkerErr,
+			secondWorkerErr,
+			shutdownErr,
+		)
 	case err := <-workerErrCh:
 		stopWorkers()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
-		defer cancel()
-		shutdownErr := server.Shutdown(shutdownCtx)
+		shutdownErr := shutdownWorkerServers(
+			cfg.HTTP.ShutdownTimeout,
+			healthServer,
+			metricsServer,
+		)
 		otherErr := <-workerErrCh
-		if !errors.Is(shutdownErr, http.ErrServerClosed) {
-			return errors.Join(err, otherErr, shutdownErr)
-		}
-		return errors.Join(err, otherErr)
+		first := <-serverErrCh
+		second := <-serverErrCh
+		return errors.Join(
+			err,
+			otherErr,
+			workerServerError(first.name, first.err),
+			workerServerError(second.name, second.err),
+			shutdownErr,
+		)
 	case <-runCtx.Done():
 		stopWorkers()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("关闭 Worker 健康服务失败: %w", err)
-		}
-		return errors.Join(<-workerErrCh, <-workerErrCh)
+		shutdownErr := shutdownWorkerServers(
+			cfg.HTTP.ShutdownTimeout,
+			healthServer,
+			metricsServer,
+		)
+		first := <-serverErrCh
+		second := <-serverErrCh
+		return errors.Join(
+			<-workerErrCh,
+			<-workerErrCh,
+			workerServerError(first.name, first.err),
+			workerServerError(second.name, second.err),
+			shutdownErr,
+		)
 	}
+}
+
+// shutdownWorkerServers 在共享超时内并行关闭 Worker 健康和指标服务
+func shutdownWorkerServers(timeout time.Duration, servers ...*http.Server) error {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	errCh := make(chan error, len(servers))
+	var wait sync.WaitGroup
+	wait.Add(len(servers))
+	for _, server := range servers {
+		go func(server *http.Server) {
+			defer wait.Done()
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				errCh <- fmt.Errorf("关闭 Worker HTTP 服务失败: %w", err)
+			}
+		}(server)
+	}
+	wait.Wait()
+	close(errCh)
+
+	errs := make([]error, 0)
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// workerServerError 忽略正常关闭错误并保留监听失败原因
+func workerServerError(name string, err error) error {
+	if err == nil || errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return fmt.Errorf("%s HTTP 服务异常退出: %w", name, err)
 }
