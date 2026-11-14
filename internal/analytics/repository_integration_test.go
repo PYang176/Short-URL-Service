@@ -107,6 +107,36 @@ func TestMySQLRepositoryAnalytics(t *testing.T) {
 	if len(devices) != 2 {
 		t.Fatalf("设备维度数量 = %d, want 2; %+v", len(devices), devices)
 	}
+
+	human := false
+	reader, err := repo.OpenExport(t.Context(), ExportFilter{
+		WorkspaceID: workspaceID,
+		LinkID:      linkID,
+		From:        from,
+		To:          to,
+		IsBot:       &human,
+		Device:      "desktop",
+		Country:     "CN",
+		Browser:     "Chrome",
+	})
+	if err != nil {
+		t.Fatalf("OpenExport() error = %v", err)
+	}
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+	exported := make([]ExportEvent, 0)
+	for reader.Next() {
+		exported = append(exported, reader.Event())
+	}
+	if err := reader.Err(); err != nil {
+		t.Fatalf("导出游标 error = %v", err)
+	}
+	if len(exported) != 1 || exported[0].EventID != events[0].EventID {
+		t.Fatalf("导出明细 = %+v", exported)
+	}
 }
 
 // TestMySQLRepositoryWorkspaceOverview 验证工作空间聚合、热门链接和隔离

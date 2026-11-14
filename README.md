@@ -23,6 +23,8 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 - Redis Streams 点击事件、Consumer Group、ACK 和 Pending 接管。
 - MySQL 点击明细、趋势、独立访客、设备、系统、浏览器和来源分析。
 - 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
+- 点击明细支持时间、链接、真人/机器人、设备、国家、浏览器和 UTM 组合筛选，
+  并通过 MySQL 游标流式导出 CSV。
 - API Key 生命周期、作用域认证、撤销、按 Key 限流和 OpenAPI 3.1 文档。
 - Webhook 端点管理、事务型 Outbox、HMAC-SHA256 签名、重试和自动停用。
 - 公开滥用举报、管理员下架、目标域名黑名单和后台操作审计。
@@ -286,6 +288,7 @@ DELETE /api/v1/links/{id}
 GET    /api/v1/links/{id}/qr
 GET    /api/v1/links/{id}/analytics
 GET    /api/v1/analytics/overview
+GET    /api/v1/analytics/export
 
 GET    /api/v1/domains
 POST   /api/v1/domains

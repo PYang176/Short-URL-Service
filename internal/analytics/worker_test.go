@@ -76,8 +76,9 @@ func TestWorkerProcessesAndAcknowledgesMessages(t *testing.T) {
 }
 
 type fakeAnalyticsRepository struct {
-	mu     sync.Mutex
-	events []Event
+	mu               sync.Mutex
+	events           []Event
+	lastExportFilter ExportFilter
 }
 
 // InsertBatch 保存 Worker 测试事件
@@ -141,6 +142,37 @@ func (r *fakeAnalyticsRepository) TopLinks(
 	int,
 ) ([]TopLink, error) {
 	return nil, nil
+}
+
+// OpenExport 返回未使用的测试导出游标
+func (r *fakeAnalyticsRepository) OpenExport(
+	_ context.Context,
+	filter ExportFilter,
+) (ExportReader, error) {
+	r.lastExportFilter = filter
+	return fakeExportReader{}, nil
+}
+
+type fakeExportReader struct{}
+
+// Next 表示空导出游标已经结束
+func (fakeExportReader) Next() bool {
+	return false
+}
+
+// Event 返回空点击明细
+func (fakeExportReader) Event() ExportEvent {
+	return ExportEvent{}
+}
+
+// Err 返回空游标错误
+func (fakeExportReader) Err() error {
+	return nil
+}
+
+// Close 关闭空导出游标
+func (fakeExportReader) Close() error {
+	return nil
 }
 
 // TestWorkerRecoversMissingConsumerGroup 验证 Stream 被清理后 Worker 自动重建消费组

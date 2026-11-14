@@ -3,10 +3,31 @@ package analytics
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/PYang176/Short-URL-Service/internal/link"
 )
+
+// ExportInput 是点击明细导出的请求参数
+type ExportInput struct {
+	// LinkID 是可选短链 ULID；空值导出整个工作空间
+	LinkID string
+	// Days 是导出时间范围，允许 1 至 90 天
+	Days int
+	// Visitor 是 all、human 或 bot
+	Visitor string
+	// Device 是可选设备类型
+	Device string
+	// Country 是可选 ISO 国家代码
+	Country string
+	// Browser 是可选浏览器
+	Browser string
+	// Referrer 是可选来源页
+	Referrer string
+	// UTMSource 是可选 UTM 来源
+	UTMSource string
+}
 
 // Service 提供有权限校验的链接点击分析
 type Service struct {
@@ -110,4 +131,74 @@ func (s *Service) WorkspaceOverview(
 		Trend:    trend,
 		TopLinks: topLinks,
 	}, nil
+}
+
+// OpenExport 校验筛选参数并打开点击明细游标
+func (s *Service) OpenExport(
+	ctx context.Context,
+	workspaceID string,
+	input ExportInput,
+) (ExportReader, error) {
+	if input.Days < 1 || input.Days > 90 {
+		return nil, fmt.Errorf("%w: days 必须为 1 至 90", link.ErrInvalidInput)
+	}
+	input.LinkID = strings.TrimSpace(input.LinkID)
+	if input.LinkID != "" {
+		if _, err := s.links.FindByID(ctx, workspaceID, input.LinkID); err != nil {
+			return nil, err
+		}
+	}
+	visitor := strings.ToLower(strings.TrimSpace(input.Visitor))
+	if visitor == "" {
+		visitor = "all"
+	}
+	var isBot *bool
+	switch visitor {
+	case "all":
+	case "human":
+		value := false
+		isBot = &value
+	case "bot":
+		value := true
+		isBot = &value
+	default:
+		return nil, fmt.Errorf("%w: visitor 必须是 all、human 或 bot", link.ErrInvalidInput)
+	}
+	device := strings.ToLower(strings.TrimSpace(input.Device))
+	if device != "" &&
+		device != "desktop" &&
+		device != "mobile" &&
+		device != "tablet" {
+		return nil, fmt.Errorf("%w: device 必须是 desktop、mobile 或 tablet", link.ErrInvalidInput)
+	}
+	country := strings.ToUpper(strings.TrimSpace(input.Country))
+	if country != "" && len(country) != 2 {
+		return nil, fmt.Errorf("%w: country 必须是两位国家代码", link.ErrInvalidInput)
+	}
+	browser := strings.TrimSpace(input.Browser)
+	if len([]rune(browser)) > 32 {
+		return nil, fmt.Errorf("%w: browser 不能超过 32 个字符", link.ErrInvalidInput)
+	}
+	referrer := strings.TrimSpace(input.Referrer)
+	if len([]rune(referrer)) > 2048 {
+		return nil, fmt.Errorf("%w: referrer 不能超过 2048 个字符", link.ErrInvalidInput)
+	}
+	utmSource := strings.TrimSpace(input.UTMSource)
+	if len([]rune(utmSource)) > 255 {
+		return nil, fmt.Errorf("%w: utm_source 不能超过 255 个字符", link.ErrInvalidInput)
+	}
+
+	to := s.now()
+	return s.repo.OpenExport(ctx, ExportFilter{
+		WorkspaceID: workspaceID,
+		LinkID:      input.LinkID,
+		From:        to.AddDate(0, 0, -input.Days),
+		To:          to,
+		IsBot:       isBot,
+		Device:      device,
+		Country:     country,
+		Browser:     browser,
+		Referrer:    referrer,
+		UTMSource:   utmSource,
+	})
 }

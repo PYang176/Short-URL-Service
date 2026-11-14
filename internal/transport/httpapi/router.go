@@ -206,6 +206,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	resources.GET("/links/:id/qr", RequireScope(apikey.ScopeLinksRead), deps.Links.QRCode)
 	resources.GET("/links/:id/analytics", RequireScope(apikey.ScopeAnalyticsRead), deps.Analytics.Overview)
 	resources.GET("/analytics/overview", RequireScope(apikey.ScopeAnalyticsRead), deps.Analytics.WorkspaceOverview)
+	resources.GET("/analytics/export", RequireScope(apikey.ScopeAnalyticsRead), deps.Analytics.ExportCSV)
 
 	if deps.Config.RateLimit.Enabled {
 		redirectLimit := RateLimitByIP(deps.Limiter, deps.Logger, "redirect", deps.Config.RateLimit.Redirect)

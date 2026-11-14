@@ -101,6 +101,76 @@ type WorkspaceOverview struct {
 	TopLinks []TopLink `json:"top_links"`
 }
 
+// ExportFilter 是点击明细导出使用的组合筛选条件
+type ExportFilter struct {
+	// WorkspaceID 是必须匹配的工作空间 ULID
+	WorkspaceID string
+	// LinkID 是可选短链 ULID；空值表示整个工作空间
+	LinkID string
+	// From 是点击时间的包含下界 UTC 时间
+	From time.Time
+	// To 是点击时间的排除上界 UTC 时间
+	To time.Time
+	// IsBot 为 nil 时不过滤，false 只导出真人，true 只导出机器人
+	IsBot *bool
+	// Device 是可选设备精确匹配
+	Device string
+	// Country 是可选 ISO 国家代码精确匹配
+	Country string
+	// Browser 是可选浏览器精确匹配
+	Browser string
+	// Referrer 是可选来源页精确匹配
+	Referrer string
+	// UTMSource 是可选 utm_source 精确匹配
+	UTMSource string
+}
+
+// ExportEvent 是一条可安全导出的点击明细
+type ExportEvent struct {
+	// EventID 是 ULID 点击事件标识
+	EventID string `db:"event_id"`
+	// ClickedAt 是点击 UTC 时间
+	ClickedAt time.Time `db:"clicked_at"`
+	// Slug 是点击时的短码快照
+	Slug string `db:"slug"`
+	// Country 是 ISO 国家代码
+	Country string `db:"country"`
+	// Device 是设备类型
+	Device string `db:"device"`
+	// OS 是操作系统
+	OS string `db:"os"`
+	// Browser 是浏览器
+	Browser string `db:"browser"`
+	// Language 是浏览器语言
+	Language string `db:"language"`
+	// Referrer 是来源页
+	Referrer string `db:"referrer"`
+	// UTMSource 是 utm_source
+	UTMSource string `db:"utm_source"`
+	// UTMMedium 是 utm_medium
+	UTMMedium string `db:"utm_medium"`
+	// UTMCampaign 是 utm_campaign
+	UTMCampaign string `db:"utm_campaign"`
+	// UTMTerm 是 utm_term
+	UTMTerm string `db:"utm_term"`
+	// UTMContent 是 utm_content
+	UTMContent string `db:"utm_content"`
+	// IsBot 表示是否命中项目内机器人 UA 规则
+	IsBot bool `db:"is_bot"`
+}
+
+// ExportReader 是点击明细的流式读取器
+type ExportReader interface {
+	// Next 前进到下一条记录，False 表示结束或读取失败
+	Next() bool
+	// Event 返回当前记录
+	Event() ExportEvent
+	// Err 返回迭代过程中的错误
+	Err() error
+	// Close 释放数据库游标
+	Close() error
+}
+
 // Repository 定义点击事件存储和分析查询
 type Repository interface {
 	// InsertBatch 幂等批量保存点击事件
@@ -131,6 +201,8 @@ type Repository interface {
 		from, to time.Time,
 		limit int,
 	) ([]TopLink, error)
+	// OpenExport 打开带组合筛选的点击明细游标
+	OpenExport(ctx context.Context, filter ExportFilter) (ExportReader, error)
 }
 
 // MySQLRepository 使用 MySQL 保存和查询点击事件
@@ -424,6 +496,92 @@ func (r *MySQLRepository) TopLinks(
 		return nil, fmt.Errorf("查询工作空间热门链接失败: %w", err)
 	}
 	return items, nil
+}
+
+// OpenExport 打开带组合筛选的点击明细游标
+func (r *MySQLRepository) OpenExport(
+	ctx context.Context,
+	filter ExportFilter,
+) (ExportReader, error) {
+	query := `
+		SELECT event_id, clicked_at, slug, country, device, os, browser,
+			language, referrer, utm_source, utm_medium, utm_campaign,
+			utm_term, utm_content, is_bot
+		FROM click_events
+		WHERE workspace_id = ?
+		  AND clicked_at >= ?
+		  AND clicked_at < ?`
+	args := []any{filter.WorkspaceID, filter.From, filter.To}
+	if filter.LinkID != "" {
+		query += " AND link_id = ?"
+		args = append(args, filter.LinkID)
+	}
+	if filter.IsBot != nil {
+		query += " AND is_bot = ?"
+		args = append(args, *filter.IsBot)
+	}
+	filters := []struct {
+		column string
+		value  string
+	}{
+		{column: "device", value: filter.Device},
+		{column: "country", value: filter.Country},
+		{column: "browser", value: filter.Browser},
+		{column: "referrer", value: filter.Referrer},
+		{column: "utm_source", value: filter.UTMSource},
+	}
+	for _, item := range filters {
+		if item.value != "" {
+			query += " AND " + item.column + " = ?"
+			args = append(args, item.value)
+		}
+	}
+	query += " ORDER BY clicked_at DESC, event_id DESC"
+
+	rows, err := r.db.QueryxContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("打开点击明细导出失败: %w", err)
+	}
+	return &sqlExportReader{rows: rows}, nil
+}
+
+type sqlExportReader struct {
+	rows    *sqlx.Rows
+	current ExportEvent
+	err     error
+}
+
+// Next 读取下一条点击明细
+func (r *sqlExportReader) Next() bool {
+	if !r.rows.Next() {
+		return false
+	}
+	if err := r.rows.StructScan(&r.current); err != nil {
+		r.err = fmt.Errorf("读取点击明细失败: %w", err)
+		return false
+	}
+	return true
+}
+
+// Event 返回当前点击明细
+func (r *sqlExportReader) Event() ExportEvent {
+	return r.current
+}
+
+// Err 返回游标读取错误
+func (r *sqlExportReader) Err() error {
+	if r.err != nil {
+		return r.err
+	}
+	return r.rows.Err()
+}
+
+// Close 关闭数据库游标
+func (r *sqlExportReader) Close() error {
+	if err := r.rows.Close(); err != nil {
+		return fmt.Errorf("关闭点击明细游标失败: %w", err)
+	}
+	return nil
 }
 
 var breakdownColumns = map[string]string{

@@ -114,6 +114,66 @@ paths:
       responses:
         "200":
           description: 工作空间总量、趋势和热门链接
+  /api/v1/analytics/export:
+    get:
+      tags: [Analytics]
+      summary: 流式导出点击明细 CSV
+      security:
+        - BearerAuth: []
+        - APIKeyAuth: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+        - name: link_id
+          in: query
+          schema:
+            type: string
+          description: 为空时导出整个工作空间
+        - name: visitor
+          in: query
+          schema:
+            type: string
+            enum: [all, human, bot]
+            default: all
+        - name: device
+          in: query
+          schema:
+            type: string
+            enum: [desktop, mobile, tablet]
+        - name: country
+          in: query
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 2
+        - name: browser
+          in: query
+          schema:
+            type: string
+        - name: utm_source
+          in: query
+          schema:
+            type: string
+        - name: referrer
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: UTF-8 CSV 点击明细，不包含原始 IP 或访客哈希
+          content:
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: 导出筛选参数无效
+        "404":
+          description: 指定短链不存在
   /api/v1/api-keys:
     get:
       tags: [API Keys]
