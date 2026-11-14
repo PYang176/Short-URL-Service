@@ -38,10 +38,13 @@ export async function requestJSON<T>(
 }
 
 // requestBlob 下载二进制响应，并在 401 后刷新一次 Token
-export async function requestBlob(path: string): Promise<Blob> {
-  let response = await executeRequest(path, {}, true)
-  if (response.status === 401 && (await refreshSession())) {
-    response = await executeRequest(path, {}, true)
+export async function requestBlob(
+  path: string,
+  authenticated = true,
+): Promise<Blob> {
+  let response = await executeRequest(path, {}, authenticated)
+  if (response.status === 401 && authenticated && (await refreshSession())) {
+    response = await executeRequest(path, {}, authenticated)
   }
   if (!response.ok) {
     throw await toApiError(response)

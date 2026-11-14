@@ -13,10 +13,11 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 - 免登录工具页通过悬浮对话框完成登录和注册，不离开当前短链工作区。
 - 免登录游客试用，每条链接可选择 15 分钟、30 分钟、1 小时、12 小时或
   24 小时有效期；会话最多创建 3 条链接。
+- 游客可查看当前会话短链的二维码、总访问、常规访问、自动访问和独立访客。
 - 注册后自动认领游客链接和点击数据，并清除临时过期时间。
 - 未登录访问根路径直接进入游客工作空间；已登录用户进入 Dashboard。
 - 用户工作空间与资源归属校验。
-- 短链接创建、游标分页、详情、编辑、停用和软删除。
+- 短链接创建、服务端搜索、状态筛选、游标分页、详情、编辑、停用和软删除。
 - 随机 Base62 短码、自定义别名和数据库唯一约束。
 - URL 规范化、严格 JSON、请求体大小限制和可信代理边界。
 - Redis 空值缓存、TTL 抖动、`singleflight` 和主动缓存失效。
@@ -32,6 +33,8 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 - API Key 生命周期、作用域认证、撤销、按 Key 限流和 OpenAPI 3.1 文档。
 - Webhook 端点管理、事务型 Outbox、HMAC-SHA256 签名、重试和自动停用。
 - 公开滥用举报、管理员下架、目标域名黑名单和后台操作审计。
+- 公开只读分析分享，支持 1、7、30 天有效期和立即撤销，数据库只保存 Token
+  摘要。
 - 动态二维码 PNG/SVG，二维码指向稳定短链并标记扫码来源。
 - 自定义域名添加、TXT/CNAME 验证和 Host 跳转。
 - Vue 3 管理端、项目内 SVG 趋势图和 CSS 维度排行。
@@ -256,6 +259,8 @@ Idempotent-Replayed: true
 ```http
 POST /api/v1/trial/links
 GET  /api/v1/trial/links
+GET  /api/v1/trial/links/{id}/analytics
+GET  /api/v1/trial/links/{id}/qr
 ```
 
 游客会话使用 HttpOnly Cookie，数据库只保存 Token 哈希。默认每 IP 每小时
@@ -271,6 +276,8 @@ POST   /api/v1/auth/refresh
 
 POST   /api/v1/trial/links
 GET    /api/v1/trial/links
+GET    /api/v1/trial/links/{id}/analytics
+GET    /api/v1/trial/links/{id}/qr
 POST   /api/v1/trial/claim
 
 GET    /api/v1/api-keys
@@ -292,6 +299,7 @@ DELETE /api/v1/abuse/blocked-domains/{id}
 POST   /api/v1/links
 POST   /api/v1/links/bulk
 GET    /api/v1/links
+GET    /api/v1/links?q={关键词}&status={1|2}
 GET    /api/v1/links/{id}
 PATCH  /api/v1/links/{id}
 DELETE /api/v1/links/{id}
@@ -299,6 +307,10 @@ GET    /api/v1/links/{id}/qr
 GET    /api/v1/links/{id}/analytics
 GET    /api/v1/analytics/overview
 GET    /api/v1/analytics/export
+POST   /api/v1/links/{id}/shares
+GET    /api/v1/links/{id}/shares
+DELETE /api/v1/links/{id}/shares/{shareId}
+GET    /api/v1/public/reports/{token}
 
 GET    /api/v1/domains
 POST   /api/v1/domains
@@ -437,6 +449,7 @@ internal/analytics   点击事件和分析
 internal/trial       游客会话、配额和临时链接
 internal/webhook     Webhook 配置、Outbox 投递和签名
 internal/abuse       滥用举报、目标黑名单和审计日志
+internal/share      公开只读分析分享
 internal/platform    配置、MySQL、Redis、限流、幂等
 internal/transport   HTTP 路由与中间件
 web                  Vue 3 管理端

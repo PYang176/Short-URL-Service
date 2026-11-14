@@ -8,6 +8,7 @@ import type { AnalyticsOverview, Link } from '@/api/types'
 import AnalyticsExportPanel from '@/components/AnalyticsExportPanel.vue'
 import BreakdownList from '@/components/BreakdownList.vue'
 import LinkFormDialog from '@/components/LinkFormDialog.vue'
+import ShareReportPanel from '@/components/ShareReportPanel.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import { formatCompactNumber, formatDateTime, statusLabel } from '@/utils/format'
 
@@ -249,6 +250,8 @@ onBeforeUnmount(() => {
           </dl>
         </aside>
       </div>
+
+      <ShareReportPanel :link-id="link.id" />
 
       <section class="analytics-grid" aria-label="访问维度分布">
         <BreakdownList title="设备" :items="analytics?.devices ?? []" />

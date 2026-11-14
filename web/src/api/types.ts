@@ -190,6 +190,35 @@ export interface AnalyticsOverview {
   referrers: BreakdownItem[]
 }
 
+// AnalyticsShare 是公开分析分享的所有者管理元数据
+export interface AnalyticsShare {
+  id: string
+  days: number
+  expires_at: string
+  created_at: string
+}
+
+// CreateAnalyticsShareResponse 是创建分享后的一次性 Token 响应
+export interface CreateAnalyticsShareResponse {
+  share: AnalyticsShare
+  token: string
+}
+
+// AnalyticsShareListResponse 是短链有效分享列表
+export interface AnalyticsShareListResponse {
+  items: AnalyticsShare[]
+}
+
+// PublicShareReport 是不包含内部标识的公开分析报告
+export interface PublicShareReport {
+  title: string
+  slug: string
+  short_url: string
+  days: number
+  expires_at: string
+  analytics: Omit<AnalyticsOverview, 'days' | 'referrers'>
+}
+
 // WorkspaceAnalyticsSummary 是工作空间整体指标
 export interface WorkspaceAnalyticsSummary {
   total_links: number

@@ -26,6 +26,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/idempotency"
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
+	"github.com/PYang176/Short-URL-Service/internal/share"
 	"github.com/PYang176/Short-URL-Service/internal/transport/httpapi"
 	trialpkg "github.com/PYang176/Short-URL-Service/internal/trial"
 	"github.com/PYang176/Short-URL-Service/internal/webhook"
@@ -115,7 +116,13 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		cfg.Trial.SessionTTL,
 		cfg.Trial.MaxLinks,
 	)
-	trialHandler := trialpkg.NewHandler(trialService, linkService, logger)
+	trialHandler := trialpkg.NewHandler(
+		trialService,
+		linkService,
+		analyticsService,
+		linkHandler,
+		logger,
+	)
 	webhookCipher, err := webhook.NewSecretCipher(cfg.Auth.JWTSecret)
 	if err != nil {
 		return nil, fmt.Errorf("初始化 Webhook 加密器失败: %w", err)
@@ -127,6 +134,13 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		cfg.Webhook.AllowPrivateTargets,
 	)
 	webhookHandler := webhook.NewHandler(webhookService, logger)
+	shareService := share.NewService(share.NewMySQLRepository(db))
+	shareHandler := share.NewHandler(
+		shareService,
+		linkService,
+		analyticsService,
+		logger,
+	)
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Config:     cfg,
@@ -142,6 +156,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		Trial:      trialHandler,
 		Webhooks:   webhookHandler,
 		Abuse:      abuseHandler,
+		Shares:     shareHandler,
 		Tokens:     tokenManager,
 		Limiter:    slidingWindowLimiter,
 		APIVersion: "v1",

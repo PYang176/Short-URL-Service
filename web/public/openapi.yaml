@@ -14,6 +14,7 @@ tags:
   - name: Trial
   - name: Links
   - name: Analytics
+  - name: Shares
   - name: API Keys
   - name: Webhooks
   - name: Abuse
@@ -52,6 +53,116 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TrialClaimResponse"
+  /api/v1/trial/links/{id}/analytics:
+    get:
+      tags: [Trial, Analytics]
+      summary: 读取当前游客短链的基础访问分析
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: days
+          in: query
+          schema:
+            type: integer
+            enum: [1, 7]
+      responses:
+        "200":
+          description: 脱敏访问分析结果
+        "401":
+          description: 游客会话不存在或已过期
+  /api/v1/trial/links/{id}/qr:
+    get:
+      tags: [Trial]
+      summary: 读取当前游客短链的二维码
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PNG 二维码
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+  /api/v1/links/{id}/shares:
+    post:
+      tags: [Shares]
+      summary: 创建公开只读分析分享
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [days]
+              properties:
+                days:
+                  type: integer
+                  enum: [1, 7, 30]
+      responses:
+        "201":
+          description: 分享 Token 只在本次响应中返回
+    get:
+      tags: [Shares]
+      summary: 查询短链当前有效的公开分享
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 分享列表，不包含 Token 明文
+  /api/v1/links/{id}/shares/{shareId}:
+    delete:
+      tags: [Shares]
+      summary: 撤销公开分析分享
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: shareId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: 分享已撤销
+  /api/v1/public/reports/{token}:
+    get:
+      tags: [Shares]
+      summary: 读取公开脱敏分析报告
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 只读聚合报告，不包含内部标识或访客哈希
+        "404":
+          description: 分享不存在、已撤销或已过期
   /api/v1/links:
     get:
       tags: [Links]

@@ -60,7 +60,7 @@ def main() -> None:
         page.get_by_label("自定义短码，可选").fill(trial_alias)
         page.get_by_label("标题，可选").fill("免登录试用")
         page.get_by_role("radio", name="15 分钟").check()
-        page.get_by_role("button", name="生成试用短链").click()
+        page.get_by_role("button", name="生成短链接").click()
         page.get_by_role("heading", name="免登录试用").wait_for()
         trial_short_url = page.locator(".trial-result a").inner_text()
         trial_response = context.request.get(trial_short_url, max_redirects=0)
@@ -71,6 +71,10 @@ def main() -> None:
         expires_at = datetime.fromisoformat(trial_link["expires_at"].replace("Z", "+00:00"))
         lifetime = expires_at - created_at
         assert 14 * 60 <= lifetime.total_seconds() <= 15 * 60 + 5, lifetime
+        page.get_by_role("button", name="查看访问与二维码").click()
+        page.locator(".trial-insights").wait_for()
+        page.locator(".trial-qr-preview img").wait_for()
+        page.get_by_role("button", name="关闭").click()
         page.screenshot(path=ARTIFACT_DIR / "trial.png", full_page=True)
 
         page.goto(f"{BASE_URL}/register")
@@ -150,6 +154,24 @@ def main() -> None:
         assert total_clicks == "3", f"expected 3 clicks, got {total_clicks}"
         page.screenshot(path=ARTIFACT_DIR / "link-detail.png", full_page=True)
 
+        share_panel = page.locator(".share-report-panel")
+        share_panel.get_by_label("分析范围").select_option("1")
+        share_panel.get_by_role("button", name="创建公开分享").click()
+        share_input = share_panel.get_by_label("新公开分享链接")
+        share_input.wait_for()
+        share_url = share_input.input_value()
+        public_context = browser.new_context(viewport={"width": 1280, "height": 900})
+        public_page = public_context.new_page()
+        public_page.goto(share_url, wait_until="networkidle")
+        public_page.get_by_text("只读访问报告").wait_for()
+        public_page.get_by_text("总访问").wait_for()
+        page.once("dialog", lambda dialog: dialog.accept())
+        share_panel.get_by_role("button", name="撤销").click()
+        share_panel.get_by_text("公开分享已撤销").wait_for()
+        public_page.reload(wait_until="networkidle")
+        public_page.get_by_text("报告无法访问").wait_for()
+        public_context.close()
+
         export_panel = page.locator(".analytics-export-panel")
         export_panel.get_by_label("访问类型").select_option("human")
         with page.expect_download() as csv_download:
@@ -182,6 +204,11 @@ def main() -> None:
             exact=True,
         ).click()
         page.wait_for_url("**/links")
+        page.get_by_label("搜索短链接").fill(alias)
+        page.wait_for_timeout(700)
+        filtered_rows = page.locator(".link-row")
+        assert filtered_rows.count() == 1, "服务端搜索应只返回匹配短链"
+        page.get_by_label("搜索短链接").fill("")
         page.get_by_role("button", name="批量导入").click()
         bulk_panel = page.locator(".bulk-import-panel")
         bulk_panel.get_by_role("heading", name="CSV 批量创建").wait_for()

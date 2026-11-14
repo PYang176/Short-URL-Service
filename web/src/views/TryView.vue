@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, shallowRef } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  shallowRef,
+  watch,
+} from 'vue'
 import { RouterLink } from 'vue-router'
 
-import { createTrialLink, listTrialLinks } from '@/api'
+import {
+  createTrialLink,
+  getTrialAnalytics,
+  getTrialQRCode,
+  listTrialLinks,
+} from '@/api'
 import { ApiError } from '@/api/http'
-import type { TrialLink } from '@/api/types'
-import { formatDateTime } from '@/utils/format'
+import type { AnalyticsOverview, TrialLink } from '@/api/types'
+import TrendChart from '@/components/TrendChart.vue'
+import { formatCompactNumber, formatDateTime } from '@/utils/format'
 
 type ExpiryMinutes = 15 | 30 | 60 | 720 | 1440
 
@@ -62,9 +75,18 @@ const loading = shallowRef(true)
 const pending = shallowRef(false)
 const errorMessage = shallowRef('')
 const notice = shallowRef('')
+const selectedLink = shallowRef<TrialLink | null>(null)
+const trialAnalytics = shallowRef<AnalyticsOverview | null>(null)
+const insightDays = shallowRef<1 | 7>(1)
+const insightLoading = shallowRef(false)
+const insightError = shallowRef('')
+const qrPreviewURL = shallowRef('')
+const qrBlob = shallowRef<Blob | null>(null)
+let insightRequestID = 0
 
 const exhausted = computed(() => remaining.value === 0)
 const quotaLabel = computed(() => `剩余 ${remaining.value} / ${limit.value} 条`)
+const selectedTrend = computed(() => trialAnalytics.value?.trend ?? [])
 
 // loadTrialLinks 读取当前浏览器 Cookie 对应的游客链接。
 async function loadTrialLinks(): Promise<void> {
@@ -121,12 +143,96 @@ async function copyShortURL(value: string): Promise<void> {
   }
 }
 
+// openInsights 展开游客短链的二维码和基础访问分析。
+async function openInsights(item: TrialLink): Promise<void> {
+  selectedLink.value = item
+  trialAnalytics.value = null
+  await loadInsights()
+}
+
+// loadInsights 并行加载当前游客短链的分析与二维码。
+async function loadInsights(): Promise<void> {
+  const current = selectedLink.value
+  if (!current) {
+    return
+  }
+  const requestID = ++insightRequestID
+  insightLoading.value = true
+  insightError.value = ''
+  try {
+    const [overview, qr] = await Promise.all([
+      getTrialAnalytics(current.id, insightDays.value),
+      getTrialQRCode(current.id),
+    ])
+    if (requestID !== insightRequestID || selectedLink.value?.id !== current.id) {
+      return
+    }
+    trialAnalytics.value = overview
+    replaceQRPreview(qr)
+  } catch (error) {
+    if (requestID === insightRequestID) {
+      insightError.value =
+        error instanceof ApiError ? error.message : '加载访问数据失败'
+    }
+  } finally {
+    if (requestID === insightRequestID) {
+      insightLoading.value = false
+    }
+  }
+}
+
+// replaceQRPreview 替换二维码对象 URL 并释放旧资源。
+function replaceQRPreview(blob: Blob): void {
+  if (qrPreviewURL.value) {
+    URL.revokeObjectURL(qrPreviewURL.value)
+  }
+  qrBlob.value = blob
+  qrPreviewURL.value = URL.createObjectURL(blob)
+}
+
+// closeInsights 关闭游客数据面板并释放二维码资源。
+function closeInsights(): void {
+  insightRequestID += 1
+  selectedLink.value = null
+  trialAnalytics.value = null
+  if (qrPreviewURL.value) {
+    URL.revokeObjectURL(qrPreviewURL.value)
+    qrPreviewURL.value = ''
+  }
+  qrBlob.value = null
+}
+
+// downloadInsightQR 下载当前游客短链二维码。
+function downloadInsightQR(): void {
+  if (!qrBlob.value || !selectedLink.value) {
+    return
+  }
+  const anchor = document.createElement('a')
+  const url = URL.createObjectURL(qrBlob.value)
+  anchor.href = url
+  anchor.download = `${selectedLink.value.slug}.png`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+watch(insightDays, () => {
+  if (selectedLink.value) {
+    void loadInsights()
+  }
+})
+
 // scrollToComposer 将页面带回首屏创建区，方便继续创建下一条试用短链。
 function scrollToComposer(): void {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 onMounted(loadTrialLinks)
+
+onBeforeUnmount(() => {
+  if (qrPreviewURL.value) {
+    URL.revokeObjectURL(qrPreviewURL.value)
+  }
+})
 </script>
 
 <template>
@@ -270,13 +376,18 @@ onMounted(loadTrialLinks)
               </a>
               <p>{{ latestLink.destination_url }}</p>
             </div>
-            <button
-              class="secondary-button trial-copy-button"
-              type="button"
-              @click="copyShortURL(latestLink.short_url)"
-            >
-              复制短链
-            </button>
+            <div class="trial-result-actions">
+              <button
+                class="secondary-button"
+                type="button"
+                @click="copyShortURL(latestLink.short_url)"
+              >
+                复制短链
+              </button>
+              <button class="text-button" type="button" @click="openInsights(latestLink)">
+                查看访问与二维码
+              </button>
+            </div>
           </section>
         </section>
 
@@ -319,11 +430,90 @@ onMounted(loadTrialLinks)
             <a :href="item.short_url" target="_blank" rel="noreferrer">{{ item.short_url }}</a>
             <time>{{ formatDateTime(item.expires_at) }}</time>
           </div>
-          <button class="text-button" type="button" @click="copyShortURL(item.short_url)">
-            复制
-          </button>
+          <div class="trial-link-actions">
+            <button class="text-button" type="button" @click="copyShortURL(item.short_url)">
+              复制
+            </button>
+            <button class="text-button" type="button" @click="openInsights(item)">
+              查看数据
+            </button>
+          </div>
         </li>
       </ul>
+    </section>
+
+    <section
+      v-if="selectedLink"
+      class="landing-shell trial-insights"
+      aria-labelledby="trial-insights-title"
+    >
+      <div class="trial-insights-heading">
+        <div>
+          <p class="section-kicker">试用短链数据</p>
+          <h2 id="trial-insights-title">{{ selectedLink.title || `/${selectedLink.slug}` }}</h2>
+          <p>访客打开短链后，基础数据会自动汇总到这里。</p>
+        </div>
+        <div class="trial-insights-actions">
+          <label class="compact-field">
+            <span>范围</span>
+            <select v-model="insightDays">
+              <option :value="1">今天</option>
+              <option :value="7">最近 7 天</option>
+            </select>
+          </label>
+          <button class="secondary-button" type="button" @click="closeInsights">关闭</button>
+        </div>
+      </div>
+
+      <p v-if="insightLoading" class="quiet-state" role="status">正在加载访问数据…</p>
+      <div v-else-if="insightError" class="error-panel" role="alert">
+        <p>{{ insightError }}</p>
+        <button class="secondary-button" type="button" @click="loadInsights">重新加载</button>
+      </div>
+      <template v-else-if="trialAnalytics">
+        <section class="trial-insight-stats" aria-label="短链访问概况">
+          <div>
+            <span>总访问</span>
+            <strong>{{ formatCompactNumber(trialAnalytics.summary.total_clicks) }}</strong>
+          </div>
+          <div>
+            <span>常规访问</span>
+            <strong>{{ formatCompactNumber(trialAnalytics.summary.human_clicks) }}</strong>
+          </div>
+          <div>
+            <span>自动访问</span>
+            <strong>{{ formatCompactNumber(trialAnalytics.summary.bot_clicks) }}</strong>
+          </div>
+          <div>
+            <span>独立访客</span>
+            <strong>{{ formatCompactNumber(trialAnalytics.summary.unique_visitors) }}</strong>
+          </div>
+        </section>
+
+        <div class="trial-insight-grid">
+          <section class="trial-insight-trend">
+            <h3>访问趋势</h3>
+            <p v-if="selectedTrend.length === 0" class="quiet-state">
+              还没有访问记录。打开一次短链后再回来查看。
+            </p>
+            <TrendChart v-else :points="selectedTrend" />
+          </section>
+          <aside class="trial-insight-qr">
+            <h3>二维码</h3>
+            <div class="trial-qr-preview">
+              <img v-if="qrPreviewURL" :src="qrPreviewURL" :alt="`短链接 /${selectedLink.slug} 的二维码`" />
+            </div>
+            <div class="trial-qr-actions">
+              <button class="secondary-button" type="button" @click="downloadInsightQR">
+                下载 PNG
+              </button>
+              <a class="secondary-button" :href="selectedLink.short_url" target="_blank" rel="noreferrer">
+                打开短链
+              </a>
+            </div>
+          </aside>
+        </div>
+      </template>
     </section>
 
     <section class="landing-shell landing-section steps-section" aria-labelledby="steps-title">
@@ -752,8 +942,124 @@ onMounted(loadTrialLinks)
   white-space: nowrap;
 }
 
-.trial-copy-button {
+.trial-result-actions,
+.trial-link-actions {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.trial-link-actions {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.trial-insights {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-strong);
+}
+
+.trial-insights-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.trial-insights-heading h2 {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: clamp(1.3rem, 3vw, 1.8rem);
+}
+
+.trial-insights-heading p:last-child {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.trial-insights-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.55rem;
+}
+
+.trial-insight-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.trial-insight-stats div {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-left: 1px solid var(--line);
+}
+
+.trial-insight-stats div:first-child {
+  border-left: 0;
+  background: var(--rail);
+  color: #ffffff;
+}
+
+.trial-insight-stats span {
+  color: inherit;
+  font-size: 0.7rem;
+  opacity: 0.72;
+}
+
+.trial-insight-stats strong {
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.trial-insight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(13rem, 0.55fr);
+  gap: 1rem;
+}
+
+.trial-insight-trend,
+.trial-insight-qr {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.trial-insight-trend h3,
+.trial-insight-qr h3 {
+  margin: 0 0 0.55rem;
+  font-family: var(--font-body);
+}
+
+.trial-qr-preview {
+  display: grid;
+  min-height: 11rem;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.trial-qr-preview img {
+  width: min(100%, 12rem);
+  height: auto;
+  display: block;
+}
+
+.trial-qr-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
 }
 
 .benefit-row {
@@ -1047,6 +1353,28 @@ onMounted(loadTrialLinks)
     grid-row: 2;
   }
 
+  .trial-insights-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .trial-insight-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .trial-insight-stats div:nth-child(3) {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .trial-insight-stats div:nth-child(4) {
+    border-top: 1px solid var(--line);
+  }
+
+  .trial-insight-grid {
+    grid-template-columns: 1fr;
+  }
+
   .footer-content {
     align-items: flex-start;
     flex-direction: column;
@@ -1076,7 +1404,15 @@ onMounted(loadTrialLinks)
     align-self: flex-start;
   }
 
-  .trial-copy-button {
+  .trial-result-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trial-insights-actions {
+    align-items: stretch;
+    flex-direction: column;
     width: 100%;
   }
 
@@ -1100,6 +1436,11 @@ onMounted(loadTrialLinks)
 
   .trial-link-row > .text-button {
     justify-self: start;
+  }
+
+  .trial-link-actions {
+    align-items: flex-start;
+    flex-direction: row;
   }
 }
 </style>

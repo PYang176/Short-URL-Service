@@ -161,7 +161,11 @@ func (h *Handler) QRCode(c *gin.Context) {
 		writeLinkError(c, err)
 		return
 	}
+	h.WriteQRCode(c, link)
+}
 
+// WriteQRCode 为已校验归属的短链输出二维码，供认证和游客入口复用。
+func (h *Handler) WriteQRCode(c *gin.Context, link *Link) {
 	size := 512
 	if rawSize := c.Query("size"); rawSize != "" {
 		parsed, err := strconv.Atoi(rawSize)

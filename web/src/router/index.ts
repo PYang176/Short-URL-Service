@@ -36,6 +36,12 @@ const router = createRouter({
       meta: { title: '举报违规短链' },
     },
     {
+      path: '/share/:token',
+      name: 'share-report',
+      component: () => import('@/views/ShareReportView.vue'),
+      meta: { title: '公开访问报告' },
+    },
+    {
       path: '/',
       component: () => import('@/components/AppShell.vue'),
       meta: { requiresAuth: true },

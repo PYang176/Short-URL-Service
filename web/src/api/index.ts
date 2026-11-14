@@ -1,16 +1,19 @@
 import { requestBlob, requestJSON } from './http'
 import type {
   AnalyticsOverview,
+  AnalyticsShareListResponse,
   AnalyticsExportFilter,
   AuthResponse,
   BulkCreateResponse,
   CreateLinkInput,
+  CreateAnalyticsShareResponse,
   Domain,
   DomainListResponse,
   Link,
   LinkListFilter,
   LinkListResponse,
   ProfileResponse,
+  PublicShareReport,
   TrialCreateInput,
   TrialClaimResponse,
   TrialLink,
@@ -209,6 +212,49 @@ export function exportAnalytics(filter: AnalyticsExportFilter): Promise<Blob> {
   return requestBlob(`/api/v1/analytics/export?${query}`)
 }
 
+// createAnalyticsShare 为链接创建固定范围的公开分析分享
+export function createAnalyticsShare(
+  linkID: string,
+  days: 1 | 7 | 30,
+): Promise<CreateAnalyticsShareResponse> {
+  return requestJSON<CreateAnalyticsShareResponse>(
+    `/api/v1/links/${encodeURIComponent(linkID)}/shares`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ days }),
+    },
+  )
+}
+
+// listAnalyticsShares 获取链接当前有效的公开分享
+export function listAnalyticsShares(
+  linkID: string,
+): Promise<AnalyticsShareListResponse> {
+  return requestJSON<AnalyticsShareListResponse>(
+    `/api/v1/links/${encodeURIComponent(linkID)}/shares`,
+  )
+}
+
+// revokeAnalyticsShare 立即撤销指定公开分享
+export function revokeAnalyticsShare(
+  linkID: string,
+  shareID: string,
+): Promise<void> {
+  return requestJSON<void>(
+    `/api/v1/links/${encodeURIComponent(linkID)}/shares/${encodeURIComponent(shareID)}`,
+    { method: 'DELETE' },
+  )
+}
+
+// getPublicShareReport 获取公开只读分析报告
+export function getPublicShareReport(token: string): Promise<PublicShareReport> {
+  return requestJSON<PublicShareReport>(
+    `/api/v1/public/reports/${encodeURIComponent(token)}`,
+    {},
+    false,
+  )
+}
+
 // listAPIKeys 获取当前工作空间的 API Key 元数据
 export function listAPIKeys(): Promise<APIKeyListResponse> {
   return requestJSON<APIKeyListResponse>('/api/v1/api-keys')
@@ -358,6 +404,26 @@ export function createTrialLink(input: TrialCreateInput): Promise<TrialLink> {
 // listTrialLinks 获取当前浏览器游客会话的短期短链
 export function listTrialLinks(): Promise<TrialLinksResponse> {
   return requestJSON<TrialLinksResponse>('/api/v1/trial/links', {}, false)
+}
+
+// getTrialAnalytics 获取游客当前会话短链的基础访问分析
+export function getTrialAnalytics(
+  id: string,
+  days: 1 | 7,
+): Promise<AnalyticsOverview> {
+  return requestJSON<AnalyticsOverview>(
+    `/api/v1/trial/links/${encodeURIComponent(id)}/analytics?days=${days}`,
+    {},
+    false,
+  )
+}
+
+// getTrialQRCode 获取游客当前会话短链的二维码图片
+export function getTrialQRCode(id: string): Promise<Blob> {
+  return requestBlob(
+    `/api/v1/trial/links/${encodeURIComponent(id)}/qr?format=png&size=512`,
+    false,
+  )
 }
 
 // claimTrialLinks 将当前游客 Cookie 下的链接迁移到登录工作空间

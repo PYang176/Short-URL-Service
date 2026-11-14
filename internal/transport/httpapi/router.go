@@ -16,6 +16,7 @@ import (
 	"github.com/PYang176/Short-URL-Service/internal/platform/config"
 	"github.com/PYang176/Short-URL-Service/internal/platform/observability"
 	"github.com/PYang176/Short-URL-Service/internal/platform/ratelimit"
+	"github.com/PYang176/Short-URL-Service/internal/share"
 	"github.com/PYang176/Short-URL-Service/internal/trial"
 	"github.com/PYang176/Short-URL-Service/internal/webhook"
 )
@@ -48,6 +49,8 @@ type Dependencies struct {
 	Webhooks *webhook.Handler
 	// Abuse 是公开举报和管理员治理接口处理器
 	Abuse *abuse.Handler
+	// Shares 是公开分析分享接口处理器
+	Shares *share.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
 	Tokens *identity.TokenManager
 	// Limiter 是共享 Redis 滑动窗口限流器
@@ -140,6 +143,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		trialAPI.POST("/links", deps.Trial.Create)
 	}
 	trialAPI.GET("/links", deps.Trial.List)
+	trialAPI.GET("/links/:id/analytics", deps.Trial.Analytics)
+	trialAPI.GET("/links/:id/qr", deps.Trial.QRCode)
 
 	abuseAPI := api.Group("/abuse")
 	if deps.Config.RateLimit.Enabled {
@@ -157,6 +162,17 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		abuseAPI.POST("/reports", deps.Abuse.CreateReport)
 	}
 
+	publicReports := api.Group("/public/reports")
+	if deps.Config.RateLimit.Enabled {
+		publicReports.Use(RateLimitByIP(
+			deps.Limiter,
+			deps.Logger,
+			"public:report",
+			deps.Config.RateLimit.API,
+		))
+	}
+	publicReports.GET("/:token", deps.Shares.Public)
+
 	protected := api.Group("")
 	protected.Use(RequireAuth(deps.Tokens))
 	if deps.Config.RateLimit.Enabled {
@@ -165,6 +181,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	protected.GET("/me", deps.Identity.Profile)
 	protected.PATCH("/me", deps.Identity.UpdateProfile)
 	protected.POST("/trial/claim", deps.Trial.Claim)
+	protected.POST("/links/:id/shares", deps.Shares.Create)
+	protected.GET("/links/:id/shares", deps.Shares.List)
+	protected.DELETE("/links/:id/shares/:shareId", deps.Shares.Revoke)
 
 	admin := protected.Group("")
 	admin.Use(RequirePlatformAdmin())

@@ -7,11 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/PYang176/Short-URL-Service/internal/analytics"
 	"github.com/PYang176/Short-URL-Service/internal/identity"
 	"github.com/PYang176/Short-URL-Service/internal/link"
 )
@@ -22,13 +24,29 @@ type Handler struct {
 	sessions *Service
 	// links 复用正式短链的创建、列表和公开地址生成逻辑
 	links *link.Service
+	// analytics 提供游客短链的基础访问分析
+	analytics *analytics.Service
+	// linkHandler 复用短链二维码渲染
+	linkHandler *link.Handler
 	// logger 记录内部错误
 	logger *slog.Logger
 }
 
 // NewHandler 创建游客试用 HTTP 处理器
-func NewHandler(sessions *Service, links *link.Service, logger *slog.Logger) *Handler {
-	return &Handler{sessions: sessions, links: links, logger: logger}
+func NewHandler(
+	sessions *Service,
+	links *link.Service,
+	analyticsService *analytics.Service,
+	linkHandler *link.Handler,
+	logger *slog.Logger,
+) *Handler {
+	return &Handler{
+		sessions:    sessions,
+		links:       links,
+		analytics:   analyticsService,
+		linkHandler: linkHandler,
+		logger:      logger,
+	}
 }
 
 type createLinkRequest struct {
@@ -191,6 +209,66 @@ func (h *Handler) List(c *gin.Context) {
 		Limit:     h.sessions.MaxLinks(),
 		ExpiresAt: &expiresAt,
 	})
+}
+
+// Analytics 返回游客当前会话内指定短链的基础访问分析。
+func (h *Handler) Analytics(c *gin.Context) {
+	session, err := h.sessionFromCookie(c)
+	if err != nil {
+		if IsInvalidSession(err) {
+			h.writeError(c, http.StatusUnauthorized, "TRIAL_SESSION_REQUIRED", "试用会话不存在或已过期")
+			return
+		}
+		h.logger.Error("恢复游客会话失败", "error", err)
+		h.writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	linkRecord, err := h.links.Get(c.Request.Context(), session.WorkspaceID, c.Param("id"))
+	if err != nil {
+		h.writeError(c, http.StatusNotFound, "LINK_NOT_FOUND", "短链不存在")
+		return
+	}
+	days := 1
+	if rawDays := strings.TrimSpace(c.Query("days")); rawDays != "" {
+		parsed, parseErr := strconv.Atoi(rawDays)
+		if parseErr != nil || (parsed != 1 && parsed != 7) {
+			h.writeError(c, http.StatusBadRequest, "INVALID_DAYS", "天数只能为 1 或 7")
+			return
+		}
+		days = parsed
+	}
+	overview, err := h.analytics.Overview(
+		c.Request.Context(),
+		session.WorkspaceID,
+		linkRecord.ID,
+		days,
+	)
+	if err != nil {
+		h.logger.Error("查询游客短链分析失败", "link_id", linkRecord.ID, "error", err)
+		h.writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	c.JSON(http.StatusOK, overview)
+}
+
+// QRCode 返回游客当前会话内指定短链的二维码。
+func (h *Handler) QRCode(c *gin.Context) {
+	session, err := h.sessionFromCookie(c)
+	if err != nil {
+		if IsInvalidSession(err) {
+			h.writeError(c, http.StatusUnauthorized, "TRIAL_SESSION_REQUIRED", "试用会话不存在或已过期")
+			return
+		}
+		h.logger.Error("恢复游客会话失败", "error", err)
+		h.writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	linkRecord, err := h.links.Get(c.Request.Context(), session.WorkspaceID, c.Param("id"))
+	if err != nil {
+		h.writeError(c, http.StatusNotFound, "LINK_NOT_FOUND", "短链不存在")
+		return
+	}
+	h.linkHandler.WriteQRCode(c, linkRecord)
 }
 
 // Claim 将当前 Cookie 游客会话中的链接认领到登录工作空间
