@@ -1,51 +1,203 @@
 # Short URL Service
 
-基于 Go 和 Vue 3 的短链接管理平台，覆盖用户认证、短链创建与缓存跳转、
-动态二维码、自定义域名、Redis Streams 点击分析和可视化工作台。短链变更
-通过 MySQL 事务型 Outbox 投递为带 HMAC 签名的 Webhook。
+基于 Go 和 Vue 3 的短链接管理与访问分析系统。项目覆盖免登录试用、短链创建与
+缓存跳转、二维码、访问统计、公开分析分享、批量导入、API Key、Webhook 和
+滥用治理。
 
-普通用户界面只保留短链创建、二维码、跳转和访问分析。域名、API Key、
-Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独立内网端口。
+本 README 按“系统范围、界面、设计、实验方法、实测结果、复现方式”组织。
+文中的容量和延迟数据均来自仓库内保留的 k6 原始 JSON，不使用估算值。
 
-## 已实现
+## 1. 项目摘要
 
-- 注册、登录、Refresh Token 轮换和重放检测。
-- 免登录工具页通过悬浮对话框完成登录和注册，不离开当前短链工作区。
-- 免登录游客试用，每条链接可选择 15 分钟、30 分钟、1 小时、12 小时或
-  24 小时有效期；会话最多创建 3 条链接。
-- 游客可查看当前会话短链的二维码、总访问、常规访问、自动访问和独立访客。
-- 注册后自动认领游客链接和点击数据，并清除临时过期时间。
-- 未登录访问根路径直接进入游客工作空间；已登录用户进入 Dashboard。
-- 用户工作空间与资源归属校验。
-- 短链接创建、服务端搜索、状态筛选、游标分页、详情、编辑、停用和软删除。
-- 随机 Base62 短码、自定义别名和数据库唯一约束。
-- URL 规范化、严格 JSON、请求体大小限制和可信代理边界。
-- Redis 空值缓存、TTL 抖动、`singleflight` 和主动缓存失效。
-- Redis 滑动窗口限流，覆盖注册、登录、刷新、管理接口和公开跳转。
-- 创建短链 `Idempotency-Key`，相同请求可安全重放；业务表保存幂等键，进程
-  异常后可以恢复首次创建结果。
-- Redis Streams 点击事件、Consumer Group、ACK 和 Pending 接管。
-- MySQL 点击明细、趋势、独立访客、设备、系统、浏览器和来源分析。
-- 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
-- 点击明细支持时间、链接、常规/自动访问、设备、国家、浏览器和 UTM 组合筛选，
-  并通过 MySQL 游标流式导出 CSV。
-- CSV 同步批量创建，单文件最多 500 行，逐行返回成功、冲突和校验错误。
-- API Key 生命周期、作用域认证、撤销、按 Key 限流和 OpenAPI 3.1 文档。
-- Webhook 端点管理、事务型 Outbox、HMAC-SHA256 签名、重试和自动停用。
-- 公开滥用举报、管理员下架、目标域名黑名单和后台操作审计。
-- 公开只读分析分享，支持 1、7、30 天有效期和立即撤销，数据库只保存 Token
-  摘要。
-- 动态二维码 PNG/SVG，二维码指向稳定短链并标记扫码来源。
-- 自定义域名添加、TXT/CNAME 验证和 Host 跳转。
-- Vue 3 管理端、项目内 SVG 趋势图和 CSS 维度排行。
-- Docker Compose、Nginx、GitHub Actions 和 k6 压测报告。
+本项目的工程验证围绕以下问题：
 
-## 技术栈
+1. 短链接的创建、查询、缓存跳转、失效和删除能否形成完整闭环。
+2. 游客数据在注册后能否安全认领，并继续进入正式工作空间。
+3. 点击事件能否通过 Redis Streams 异步落库，且不阻塞公开跳转。
+4. 公开分析分享能否在撤销后立即失效，并避免暴露内部标识。
+5. 当前单实例配置下的跳转吞吐和尾延迟处于什么范围。
+
+当前结果：
+
+| 项目 | 结果 |
+| --- | --- |
+| 运行状态 | 可在本地 Docker Compose 环境完整启动 |
+| 数据库 | MySQL 8，宿主机原生实例 |
+| Redis | 缓存、限流和点击事件 Stream |
+| 单实例跳转容量 | 观察吞吐上限约 4,650 req/s |
+| 稳定测试上限 | 4,500 req/s 目标下无 HTTP 失败、无未发起迭代 |
+| 浏览器验证 | Playwright 覆盖游客、认证、搜索、分析和分享流程 |
+| 公网状态 | 尚未部署，不声明公网 SLA |
+
+## 2. 主要界面
+
+| 免登录工作区 | 登录与注册弹窗 |
+| --- | --- |
+| <img src="docs/assets/screenshots/01-guest-workspace.png" alt="免登录短链工作区" width="100%"> | <img src="docs/assets/screenshots/02-auth-dialog.png" alt="登录与注册弹窗" width="100%"> |
+
+| 游客二维码与访问分析 | 登录后工作台 |
+| --- | --- |
+| <img src="docs/assets/screenshots/03-guest-insights.png" alt="游客二维码与访问分析" width="100%"> | <img src="docs/assets/screenshots/04-dashboard.png" alt="登录后工作台" width="100%"> |
+
+| 服务端搜索 | 链接访问分析 |
+| --- | --- |
+| <img src="docs/assets/screenshots/05-link-search.png" alt="服务端搜索短链接" width="100%"> | <img src="docs/assets/screenshots/06-link-analytics.png" alt="链接访问分析" width="100%"> |
+
+| 公开分享管理 | 公开只读分析报告 |
+| --- | --- |
+| <img src="docs/assets/screenshots/07-share-management.png" alt="公开分享管理" width="80%"> | <img src="docs/assets/screenshots/08-public-report.png" alt="公开只读分析报告" width="100%"> |
+
+截图使用 `example.com` 目标和临时演示账号生成。截图中的公开分享在采集完成后
+已撤销，不包含真实用户数据或有效分享 Token。
+
+## 3. 系统设计
+
+```text
+Browser
+  |
+Nginx :18088
+  |-- Vue 静态资源
+  |-- /api/* -> API :8080
+  `-- /r/*   -> API :8080
+
+API
+  |-- MySQL：用户、工作空间、短链、点击明细和平台配置
+  |-- Redis：跳转缓存、滑动窗口限流和点击事件 Stream
+  `-- Redis Streams -> Worker -> MySQL click_events
+```
+
+主要数据路径：
+
+1. 创建短链时，API 在 MySQL 中写入业务记录，并在事务内写入幂等结果和
+   Webhook Outbox。
+2. 公开跳转优先读取 Redis；缓存未命中时回源 MySQL，并通过 `singleflight`
+   合并同一短码的并发回源。
+3. 跳转成功后写入 Redis Stream。Worker 批量消费事件，并以 `event_id` 唯一
+   约束保证重复消费不会产生重复点击记录。
+4. 访问分析从 MySQL 点击明细查询汇总、趋势和维度分布。
+5. 公开分享只把 Token 的 SHA-256 摘要写入 MySQL，明文 Token 仅在创建响应
+   中返回一次。
+
+API、Worker 和迁移任务共用一个应用镜像，仅启动命令不同。Web 使用独立 Nginx
+镜像。MySQL 不放入 Docker，Redis 使用 Docker 持久化卷。
+
+## 4. 功能范围
+
+| 模块 | 已实现能力 |
+| --- | --- |
+| 身份与工作空间 | 注册、登录、Refresh Token 轮换、重放检测、资源归属校验 |
+| 免登录试用 | 每会话最多 3 条，有效期 15 分钟至 24 小时，登录后自动认领 |
+| 短链生命周期 | 创建、详情、编辑、停用、软删除、游标分页、服务端搜索和状态筛选 |
+| 缓存与跳转 | Base62 短码、自定义短码、Redis 缓存、空值缓存、TTL 抖动和主动失效 |
+| 二维码 | PNG 与 SVG 动态生成，二维码指向稳定短链 |
+| 访问分析 | 总访问、常规/自动访问、独立访客、趋势、设备、系统、浏览器、国家和来源 |
+| 数据导出 | 组合筛选后流式导出 CSV，不包含原始 IP 或访客哈希 |
+| 公开分享 | 1/7/30 天只读报告，支持查看、复制和立即撤销 |
+| 批量操作 | CSV 同步批量创建，最多 500 行，逐行返回结果 |
+| 平台能力 | API Key、作用域认证、Webhook Outbox 和投递记录 |
+| 治理能力 | 公开举报、管理员审核、违规下架、域名黑名单和审计日志 |
+| 可观测性 | 独立指标端口、Prometheus、Grafana、结构化日志和健康检查 |
+
+## 5. 跳转容量实验
+
+### 5.1 实验目的
+
+测度 Redis 缓存命中时，单 API 实例在不同目标请求速率下的实际吞吐、尾延迟和
+异步点击消费积压情况。
+
+### 5.2 测试环境
+
+| 项目 | 配置 |
+| --- | --- |
+| CPU | AMD Ryzen 7 5800H，8 核 16 线程 |
+| 操作系统 | Windows 11 |
+| Docker 内存上限 | 15.54 GiB |
+| API | `shorturl-app:local`，单实例 |
+| Worker | `shorturl-app:local`，单实例 |
+| MySQL | 8.0.34，宿主机原生进程 |
+| Redis | 7.4 Alpine，Docker 容器 |
+| k6 | `grafana/k6:0.57.0`，Docker 容器 |
+| 测试短链 | 每个场景 20 条，压测前完成缓存预热 |
+
+API、Worker、Redis、MySQL 和 k6 位于同一台开发机，CPU 和网络资源存在竞争。
+
+### 5.3 方法
+
+```text
+创建独立压测账号
+  -> 创建 20 条短链
+  -> 每条短链访问一次，预热 Redis
+  -> constant-arrival-rate 阶梯加压
+  -> 请求 /r/{slug}，不跟随目标页跳转
+  -> 记录错误率、实际迭代速率、P95、P99 和 dropped_iterations
+```
+
+验收阈值为：
+
+```text
+http_req_failed < 1%
+http_req_duration p(95) < 50 ms
+http_req_duration p(99) < 100 ms
+checks > 99%
+```
+
+500 至 3,000 req/s 场景持续 15 秒；4,000 和 4,500 req/s 场景持续 20 秒。
+
+### 5.4 结果
+
+| 目标速率 | 实际 iteration 速率 | 未发起迭代 | 错误率 | P95 | P99 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 500/s | 482.13/s | 0 | 0% | 1.29 ms | 1.69 ms |
+| 1,000/s | 965.77/s | 0 | 0% | 1.23 ms | 1.93 ms |
+| 2,000/s | 1,934.04/s | 0 | 0% | 1.38 ms | 3.94 ms |
+| 3,000/s | 2,898.98/s | 0 | 0% | 1.43 ms | 2.88 ms |
+| 4,000/s | 3,895.52/s | 0 | 0% | 4.83 ms | 12.48 ms |
+| 4,500/s | 4,371.29/s | 0 | 0% | 2.09 ms | 6.23 ms |
+| 5,000/s | 4,646.66/s | 1,223（77.03/s） | 0% | 110.49 ms | 134.70 ms |
+
+![跳转容量与尾延迟](docs/assets/loadtest/redirect-capacity.png)
+
+图 1：目标速率与实际吞吐、P95/P99 延迟的关系。数据源为
+`loadtest/reports/redirect-capacity-*.json`，可通过
+`python scripts/render-loadtest-chart.py` 重新生成。
+
+### 5.5 结果解释
+
+- 4,500 req/s 目标下没有 HTTP 错误，也没有因 VU 不足而未发起的请求。
+- 5,000 req/s 时实际吞吐约 4,647 req/s，HTTP 错误率仍为 0%，但 k6 已有
+  77.03 次/秒的请求无法按计划发起，P95 升至 110.49 ms。
+- 因此本次环境观察到的吞吐上限约为 4,650 req/s；测试通过至 4,500 req/s，
+  但考虑该点已接近饱和，容量规划建议控制在 3,000 至 4,000 req/s。
+- 5,000 req/s 饱和时，API CPU 采样峰值约为 701%，Redis 约为 114%，Worker
+  约为 34%。瓶颈主要出现在同机 CPU 和 Redis 处理能力。
+- 全部场景结束后，Redis 消费组 `pending=0`、`lag=0`，未观察到点击事件积压。
+
+4,500 req/s 的 P95 低于 4,000 req/s，属于 GC、调度和宿主机资源波动，不表示
+负载升高后延迟必然下降。
+
+### 5.6 效度与限制
+
+- 仅覆盖 Redis 缓存命中的公开跳转路径，不覆盖管理接口和缓存未命中容量。
+- 不跟随 302 目标页，不包含目标网站响应时间。
+- 请求直接进入隔离 API 容器，不包含公网 DNS、TLS 和真实网络链路损耗。
+- k6 与 API 同机运行，压测工具本身也消耗 CPU。
+- 5,000 req/s 场景没有 HTTP 失败；失败指标来自 k6 无法按计划发起全部请求，
+  不等同于网关返回 5xx。
+- 结果不能直接推导多实例、生产 Redis 或云主机容量，也不能作为公网 SLA。
+
+完整环境、原始数据和时间序列见：
+
+- [容量测试报告](loadtest/reports/redirect-capacity-2026-11-15.md)
+- [4,500 req/s JSON](loadtest/reports/redirect-capacity-4500rps.json)
+- [5,000 req/s JSON](loadtest/reports/redirect-capacity-5000rps.json)
+- [k6 场景](loadtest/redirect.js)
+
+## 6. 技术栈
 
 | 层 | 技术 |
 | --- | --- |
 | API | Go 1.26.11、Gin、sqlx |
-| 数据 | MySQL 8，宿主机原生实例 |
+| 数据 | MySQL 8 |
 | 缓存与事件 | Redis 7、Redis Streams |
 | 前端 | Vue 3、TypeScript、Pinia、Vue Router |
 | Web 服务 | Nginx |
@@ -53,51 +205,16 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 | 测试 | Go test、真实 MySQL 集成测试、Playwright、k6 |
 | CI | GitHub Actions |
 
-## 架构
+## 7. 快速启动
 
-```text
-Browser
-  |
-Nginx :18088
-  |-- Vue 静态资源
-  |-- /api -> API
-  `-- /r   -> API
-
-cmd/api ----------------- MySQL（宿主机）
-   |                        |
-   +--- Redis cache         |
-   +--- Redis rate limit    |
-   +--- Redis Streams       |
-             |
-          cmd/worker -------+
-```
-
-API、Worker 和迁移任务共用单一 `shorturl-app:local` 镜像，只是执行命令不同；
-Web 使用独立的 Nginx 镜像。MySQL 不放入 Docker，避免本地数据库重复和
-数据卷迁移；Redis 使用 Docker。
-
-## 文档
-
-- [需求规格](docs/需求规格.md)：当前基线与后续目标范围。
-- [架构设计](docs/架构设计.md)：已实现链路和未实现模块的边界。
-- [数据库设计](docs/数据库设计.md)：已落地表和目标表设计。
-- [接口设计](docs/接口设计.md)：已实现接口与规划接口。
-- [OpenAPI 3.1](web/public/openapi.yaml)：开发者接口描述。
-- [开发路线](docs/开发路线.md)：里程碑、验收项和当前技术债。
-- [发布验收](docs/发布验收.md)：安全、测试、备份恢复和压测结果。
-- [工程协作规则](AGENTS.md)：本地资源、测试和提交约束。
-- [部署与监控](deploy/README.md)：镜像、迁移、Prometheus 和 Grafana。
-
-## 快速启动
-
-需要：
+本地依赖：
 
 - Go 1.26.11
 - Node.js 24
 - Docker Desktop
 - 宿主机 MySQL 8
 
-### 1. 创建 MySQL 数据库
+### 7.1 创建数据库
 
 ```sql
 CREATE DATABASE short_url
@@ -109,14 +226,13 @@ GRANT ALL PRIVILEGES ON short_url.* TO 'short_url'@'%';
 FLUSH PRIVILEGES;
 ```
 
-### 2. 配置环境变量
+### 7.2 配置环境变量
 
 ```powershell
 Copy-Item deploy\.env.example deploy\.env
-notepad deploy\.env
 ```
 
-至少修改：
+至少设置：
 
 ```text
 MYSQL_DSN
@@ -125,149 +241,68 @@ ANALYTICS_HASH_SECRET
 GRAFANA_ADMIN_PASSWORD
 ```
 
-### 3. 构建并启动
+### 7.3 构建与启动
 
 ```powershell
 .\scripts\start.ps1
 ```
 
-脚本会先构建 Vue 和 `shorturl-app:local`，再启动 Redis、一次性迁移、API、
-Worker、Nginx、Prometheus 和 Grafana。
-
-Grafana 会自动加载 `Short URL Overview` 仪表盘，覆盖 HTTP 请求速率、
-P95/P99 延迟、点击 Stream 长度、Pending 数量、消费速率、ACK 错误和进程内存。
-登录账号来自 `deploy/.env` 中的 `GRAFANA_ADMIN_USER` 和
-`GRAFANA_ADMIN_PASSWORD`。
-
-### 数据库迁移
-
-迁移任务固定执行 `migrate up`。Goose 通过 MySQL 中的 `goose_db_version`
-记录已应用版本，重复启动时只检查版本并输出 `no migrations to run`，不会重复
-执行 Up 迁移，也不会清空数据库。`migrate down` 只会在人工显式执行时发生；
-生产环境还必须设置 `ALLOW_MIGRATION_DOWN=true`。
+启动脚本会构建 Vue、应用镜像和 Web 镜像，并启动 Redis、迁移任务、API、
+Worker、Nginx、Prometheus 与 Grafana。
 
 | 服务 | 地址 |
 | --- | --- |
 | Web 控制台 | http://localhost:18088 |
 | API | http://localhost:18080 |
-| Worker 健康检查 | http://localhost:18081/health/live |
 | API 就绪检查 | http://localhost:18080/health/ready |
-| Prometheus 指标 | Docker 内网 `api:9091` / `worker:9091`，不对宿主机发布 |
+| Worker 健康检查 | http://localhost:18081/health/live |
 | Prometheus | http://127.0.0.1:19090 |
 | Grafana | http://127.0.0.1:13000 |
 
-停止：
+停止服务：
 
 ```powershell
 docker compose --env-file deploy\.env -f deploy\docker-compose.yml down
 ```
 
-## 本地开发
+迁移任务固定执行 `migrate up`。Goose 在 `goose_db_version` 中记录版本，
+重复启动不会重复执行已完成的迁移，也不会清空数据库。
+
+## 8. 测试与质量检查
 
 ```powershell
-Copy-Item .env.example .env
-docker compose -f deploy\docker-compose.yml up -d --pull never redis
-go run .\cmd\migrate up
+go test ./...
+go test -race ./...
+go vet ./...
+golangci-lint run ./...
 ```
 
-终端 1：
+真实 MySQL 集成测试：
 
 ```powershell
-$env:METRICS_ADDR='127.0.0.1:9091'
-go run .\cmd\api
+$env:SHORTURL_TEST_MYSQL_DSN='user:password@tcp(127.0.0.1:3306)/short_url?parseTime=true&loc=UTC'
+go test -tags=integration ./...
 ```
 
-终端 2：
-
-```powershell
-$env:METRICS_ADDR='127.0.0.1:9092'
-go run .\cmd\worker
-```
-
-终端 3：
+前端检查：
 
 ```powershell
 Set-Location web
-npm run dev
+npm run typecheck
+npm run build
 ```
 
-前端开发地址为 `http://127.0.0.1:5173`。本地联调时，API 的
-`PUBLIC_BASE_URL` 应设置为该地址。
-
-## 演示数据
-
-API 启动后运行：
+浏览器端到端验收：
 
 ```powershell
-.\scripts\seed-demo.ps1
+$env:SHORTURL_WEBHOOK_TARGET_HOST='127.0.0.1'
+python web\scripts\e2e.py
 ```
 
-脚本默认只允许访问本机演示环境。首次运行会生成随机密码并输出演示账号；
-再次运行同一账号时，通过 `-Password` 显式传入首次生成的密码。脚本会幂等
-创建四个演示短链，并生成常规浏览器请求和自动访问请求。
+当前 E2E 覆盖免登录试用、注册认领、普通用户权限、指标端口隔离、短链创建、
+公开举报、访问分析、二维码下载、编辑、服务端搜索、公开分享和撤销失效。
 
-## 安全与限流
-
-滑动窗口限流保存在 Redis：
-
-- 注册：默认 5 次/小时/IP，Redis 故障时拒绝。
-- 登录：默认 10 次/5 分钟/IP，Redis 故障时拒绝。
-- 刷新 Token：默认 30 次/分钟/IP，Redis 故障时拒绝。
-- 管理 API：默认 120 次/分钟/工作空间。
-- 创建短链：默认 30 次/分钟/工作空间。
-- CSV 批量创建：默认 10 次/小时/工作空间，Redis 故障时拒绝。
-- 公开举报：默认 10 次/小时/IP，Redis 故障时拒绝。
-- 公开跳转：默认 600 次/分钟/IP。
-
-超限返回：
-
-```http
-429 Too Many Requests
-Retry-After: 60
-X-RateLimit-Limit: 600
-X-RateLimit-Remaining: 0
-```
-
-所有策略都可通过 `.env` 覆盖。Redis 滑动窗口 member 由服务端随机生成，
-客户端 Request ID 只用于日志关联，不能影响限流计数。Compose 只把 API 和
-Worker 调试端口绑定到宿主机回环地址。
-
-Compose 要求显式设置 `MYSQL_DSN`、`JWT_SECRET`、`ANALYTICS_HASH_SECRET`
-和 `GRAFANA_ADMIN_PASSWORD`，不提供内置默认密钥。缺失配置时 Compose 直接
-报错。生产环境还必须设置 `APP_ENV=production`、HTTPS 的
-`PUBLIC_BASE_URL` 和 `DOMAIN_VERIFY_MODE=dns`；服务会拒绝长度不足或来自
-示例配置的密钥。
-
-创建短链接支持：
-
-```http
-Idempotency-Key: create-campaign-2026-11
-```
-
-相同工作空间、相同幂等键和相同请求体返回首次创建结果，并设置：
-
-```http
-Idempotent-Replayed: true
-```
-
-幂等键同时写入链接业务表；如果链接已经提交但幂等结果尚未完成，服务在
-30 秒接管窗口后可以重试并返回已有链接，不会重复创建随机短码。CSV 批量创建
-会为每一行生成稳定的行级幂等键。
-
-免登录试用使用：
-
-```http
-POST /api/v1/trial/links
-GET  /api/v1/trial/links
-GET  /api/v1/trial/links/{id}/analytics
-GET  /api/v1/trial/links/{id}/qr
-```
-
-游客会话使用 HttpOnly Cookie，数据库只保存 Token 哈希。默认每 IP 每小时
-允许 10 次创建请求，每个会话最多 3 条链接。链接按所选有效期失效，实际时间
-不会超过游客会话剩余时间；会话结束后由 Worker 清理。
-
-## 主要接口
+## 9. 核心接口
 
 ```text
 POST   /api/v1/auth/register
@@ -280,30 +315,13 @@ GET    /api/v1/trial/links/{id}/analytics
 GET    /api/v1/trial/links/{id}/qr
 POST   /api/v1/trial/claim
 
-GET    /api/v1/api-keys
-POST   /api/v1/api-keys
-DELETE /api/v1/api-keys/{id}
-
-GET    /api/v1/webhooks
-POST   /api/v1/webhooks
-DELETE /api/v1/webhooks/{id}
-GET    /api/v1/webhooks/{id}/deliveries
-
-POST   /api/v1/abuse/reports
-GET    /api/v1/abuse/reports
-POST   /api/v1/abuse/reports/{id}/resolve
-GET    /api/v1/abuse/blocked-domains
-POST   /api/v1/abuse/blocked-domains
-DELETE /api/v1/abuse/blocked-domains/{id}
-
 POST   /api/v1/links
 POST   /api/v1/links/bulk
-GET    /api/v1/links
-GET    /api/v1/links?q={关键词}&status={1|2}
+GET    /api/v1/links?q={keyword}&status={1|2}
 GET    /api/v1/links/{id}
 PATCH  /api/v1/links/{id}
 DELETE /api/v1/links/{id}
-GET    /api/v1/links/{id}/qr
+
 GET    /api/v1/links/{id}/analytics
 GET    /api/v1/analytics/overview
 GET    /api/v1/analytics/export
@@ -312,160 +330,44 @@ GET    /api/v1/links/{id}/shares
 DELETE /api/v1/links/{id}/shares/{shareId}
 GET    /api/v1/public/reports/{token}
 
-GET    /api/v1/domains
-POST   /api/v1/domains
-POST   /api/v1/domains/{id}/verify
-DELETE /api/v1/domains/{id}
-
-GET /r/{slug}       默认域名
-GET /{slug}         自定义域名 Host
+GET    /r/{slug}
+GET    /{slug}
 ```
 
-API Key 支持：
+OpenAPI 3.1 文档位于 [web/public/openapi.yaml](web/public/openapi.yaml)。
 
-```http
-Authorization: Bearer sl_live_<prefix>.<secret>
-X-API-Key: sl_live_<prefix>.<secret>
-```
+## 10. 安全与可靠性
 
-完整 Secret 只在创建时返回一次，数据库只保存前缀和 SHA-256 哈希。作用域包括
-`links:read`、`links:write` 和 `analytics:read`。API Key 和开发者页面只对
-平台管理员开放；普通用户直接调用管理接口会收到 403。
+- 注册、登录、刷新、管理 API、创建短链、CSV 导入、公开举报和公开跳转分别
+  使用 Redis 滑动窗口限流。
+- 创建短链支持 `Idempotency-Key`；重复请求返回首次创建结果，并设置
+  `Idempotent-Replayed: true`。
+- 点击事件使用 Redis Streams、Consumer Group、ACK 和 Pending 接管，至少一次
+  消费，通过 MySQL 事件 ID 唯一约束实现幂等。
+- Webhook 使用事务型 Outbox、HMAC-SHA256 签名、指数退避和有上限重试。
+- API Key 和公开分享 Token 明文只在创建时返回，数据库只保存摘要。
+- 公开分析报告不返回工作空间 ID、链接 ID、访客哈希或原始 IP。
+- Prometheus 指标监听独立容器内网端口，不通过公开 `/metrics` 暴露。
+- Nginx 在后端容器重启后重新解析 API 地址，避免继续连接旧容器 IP。
 
-平台管理员角色保存在 `users.role=2`。角色变更后需要重新登录，使新签发的
-Access Token 包含管理员权限。
+## 11. 文档
 
-滥用治理：
+- [需求规格](docs/需求规格.md)
+- [架构设计](docs/架构设计.md)
+- [数据库设计](docs/数据库设计.md)
+- [接口设计](docs/接口设计.md)
+- [开发路线](docs/开发路线.md)
+- [发布验收](docs/发布验收.md)
+- [部署与监控](deploy/README.md)
+- [工程协作规则](AGENTS.md)
 
-- 访客可在 `/report` 提交钓鱼、恶意软件、垃圾推广、仿冒或其他举报。
-- 管理员在 `/admin/abuse` 审核举报；确认违规时同一事务内停用短链。
-- 下架提交后主动失效 Redis 跳转缓存，并记录管理员审计日志。
-- 域名黑名单自动匹配精确域名及其子域名，并同时阻止后续创建和修改。
-
-Webhook 支持 `link.created`、`link.updated` 和 `link.deleted`。创建端点时
-返回一次 `whsec_...` Secret，后续请求头包含 Event ID、事件类型、Unix 时间戳
-和签名。签名值为：
-
-```text
-sha256=HEX(HMAC-SHA256(secret, timestamp + "." + body))
-```
-
-只有 2xx 算成功。失败按有上限的指数退避重试，达到 `WEBHOOK_MAX_ATTEMPTS`
-后终止任务并自动停用端点。管理员页面可以查看最近投递状态。
-
-默认 `GET /api/v1/links/{id}/qr` 返回 PNG，可用：
-
-```text
-?format=svg&size=512
-```
-
-## 自定义域名
-
-本地默认：
-
-```text
-DOMAIN_VERIFY_MODE=mock
-```
-
-开发环境添加域名后可直接验证。生产环境切换为 `dns`，系统检查：
-
-```text
-_shorturl.{hostname} TXT -> verification token
-{hostname} CNAME         -> CUSTOM_DOMAIN_CNAME
-```
-
-本地没有真实 DNS 时，可用 Host 请求头验证：
-
-```powershell
-curl.exe -I `
-  -H "Host: go.example.com" `
-  http://127.0.0.1:18080/alias
-```
-
-## 质量检查
-
-```powershell
-go test ./...
-go test -race ./...
-go vet ./...
-golangci-lint run ./...
-go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-
-Set-Location web
-npm run typecheck
-npm run build
-npm audit --omit=dev --audit-level=high
-```
-
-真实 MySQL 集成测试：
-
-```powershell
-$env:SHORTURL_TEST_MYSQL_DSN='user:password@tcp(127.0.0.1:3306)/short_url?parseTime=true&loc=UTC'
-go test -tags=integration ./...
-```
-
-浏览器 E2E：
-
-```powershell
-$env:SHORTURL_WEBHOOK_TARGET_HOST='127.0.0.1'
-python web\scripts\e2e.py
-```
-
-覆盖免登录试用、注册认领、普通用户导航权限、后台接口 403、指标接口不可见、
-短链创建、公开举报、访问类型分析、访问分析、二维码下载、编辑链接和移动端布局。
-
-## 压测结果
-
-本机单实例、Redis 缓存命中的公开跳转路径阶梯压测结果：
-
-| 目标速率 | 实际速率 | P95 | P99 | 结果 |
-| ---: | ---: | ---: | ---: | --- |
-| 3,000 req/s | 2,898.98/s | 1.43 ms | 2.88 ms | 通过 |
-| 4,000 req/s | 3,895.52/s | 4.83 ms | 12.48 ms | 通过 |
-| 4,500 req/s | 4,371.29/s | 2.09 ms | 6.23 ms | 通过 |
-| 5,000 req/s | 4,646.66/s | 110.49 ms | 134.70 ms | 饱和 |
-
-本次环境观察到的吞吐上限约为 4,650 req/s。面向容量规划，建议当前单实例演示
-环境控制在 3,000 至 4,000 req/s。结果包含 Redis Stream 写入和异步消费压力，
-但不包含公网 DNS、TLS 与真实网络损耗，不代表生产集群容量。
-
-详细环境、边界和原始 JSON：
-
-- [500 req/s 报告](loadtest/reports/redirect-500rps.md)
-- [收尾阶段 500 req/s 回归](loadtest/reports/redirect-closure-500rps.md)
-- [容量阶梯测试报告](loadtest/reports/redirect-capacity-2026-11-15.md)
-- [k6 脚本](loadtest/redirect.js)
-
-## 目录
-
-```text
-cmd/api              HTTP API 与公开跳转
-cmd/worker           点击消费和后台任务
-cmd/migrate          数据库迁移
-internal/identity    用户、工作空间、认证
-internal/link        短链、缓存、跳转和二维码
-internal/domain      自定义域名
-internal/analytics   点击事件和分析
-internal/trial       游客会话、配额和临时链接
-internal/webhook     Webhook 配置、Outbox 投递和签名
-internal/abuse       滥用举报、目标黑名单和审计日志
-internal/share      公开只读分析分享
-internal/platform    配置、MySQL、Redis、限流、幂等
-internal/transport   HTTP 路由与中间件
-web                  Vue 3 管理端
-loadtest             k6 脚本与实测报告
-scripts              启动和演示数据脚本
-migrations           MySQL 迁移
-deploy               Docker Compose
-```
-
-## 当前边界
+## 12. 当前边界
 
 - 点击分析当前直接查询 MySQL 明细，尚未建立预聚合表。
 - 自动访问标记基于请求头特征的启发式规则，不代表已验证真人。
-- 浏览器当前使用 `localStorage` 保存 Access Token 和 Refresh Token；CSP
-  可降低脚本注入风险，但不能替代 HttpOnly Cookie 和 CSRF 防护。
-- 自定义域名生产环境尚未接 Caddy 自动证书。
-- 暂未实现文件夹、标签、用户封禁和团队角色。
-- 自定义域名的管理入口仍由平台域名提供；自定义域名根路径由 API 处理。
-- Prometheus 指标只监听容器内网专用端口；Grafana 保留管理员登录。
+- 浏览器使用 `localStorage` 保存 Access Token 和 Refresh Token；CSP 可降低
+  脚本注入风险，但不能替代 HttpOnly Cookie 和 CSRF 防护。
+- 自定义域名的本地 TXT/CNAME 校验和 Host 路由已实现，生产 DNS 与自动 HTTPS
+  证书尚未验收。
+- 当前未实现文件夹、标签、用户封禁和团队角色。
+- 项目未部署公网，README 中的容量数据不构成生产 SLA。
