@@ -1,6 +1,7 @@
 import { requestBlob, requestJSON } from './http'
 import type {
   AnalyticsOverview,
+  AnalyticsExportFilter,
   AuthResponse,
   CreateLinkInput,
   Domain,
@@ -160,6 +161,26 @@ export function getWorkspaceAnalytics(
   return requestJSON<WorkspaceAnalyticsOverview>(
     `/api/v1/analytics/overview?days=${days}`,
   )
+}
+
+// exportAnalytics 下载带组合筛选的点击明细 CSV
+export function exportAnalytics(filter: AnalyticsExportFilter): Promise<Blob> {
+  const query = new URLSearchParams()
+  query.set('days', String(filter.days))
+  query.set('visitor', filter.visitor)
+  const optional = {
+    link_id: filter.link_id,
+    device: filter.device,
+    country: filter.country.trim(),
+    browser: filter.browser.trim(),
+    utm_source: filter.utm_source.trim(),
+  }
+  for (const [key, value] of Object.entries(optional)) {
+    if (value) {
+      query.set(key, value)
+    }
+  }
+  return requestBlob(`/api/v1/analytics/export?${query}`)
 }
 
 // listAPIKeys 获取当前工作空间的 API Key 元数据

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import os
 import time
 import uuid
@@ -144,6 +145,18 @@ def main() -> None:
         total_clicks = page.locator(".summary-primary strong").inner_text()
         assert total_clicks == "3", f"expected 3 clicks, got {total_clicks}"
         page.screenshot(path=ARTIFACT_DIR / "link-detail.png", full_page=True)
+
+        export_panel = page.locator(".analytics-export-panel")
+        export_panel.get_by_label("访问类型").select_option("human")
+        with page.expect_download() as csv_download:
+            export_panel.get_by_role("button", name="导出 CSV").click()
+        export_path = ARTIFACT_DIR / f"{alias}-clicks.csv"
+        csv_download.value.save_as(export_path)
+        with export_path.open(encoding="utf-8-sig", newline="") as exported_file:
+            exported_rows = list(csv.reader(exported_file))
+        assert exported_rows[0][0] == "event_id", exported_rows[0]
+        assert len(exported_rows) == 3, f"expected 2 human rows, got {len(exported_rows) - 1}"
+        assert "visitor_hash" not in exported_rows[0]
 
         with page.expect_download() as png_download:
             page.get_by_role("button", name="下载 PNG").click()

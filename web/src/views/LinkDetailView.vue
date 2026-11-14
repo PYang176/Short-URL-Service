@@ -5,6 +5,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { getAnalytics, getLink, getQRCode } from '@/api'
 import { ApiError } from '@/api/http'
 import type { AnalyticsOverview, Link } from '@/api/types'
+import AnalyticsExportPanel from '@/components/AnalyticsExportPanel.vue'
 import BreakdownList from '@/components/BreakdownList.vue'
 import LinkFormDialog from '@/components/LinkFormDialog.vue'
 import TrendChart from '@/components/TrendChart.vue'
@@ -256,6 +257,8 @@ onBeforeUnmount(() => {
         <BreakdownList title="国家或地区" :items="analytics?.countries ?? []" />
         <BreakdownList title="来源页面" :items="analytics?.referrers ?? []" />
       </section>
+
+      <AnalyticsExportPanel :link-id="link.id" />
 
       <LinkFormDialog
         :open="editOpen"

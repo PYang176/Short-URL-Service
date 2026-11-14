@@ -192,6 +192,17 @@ export interface WorkspaceAnalyticsOverview {
   top_links: WorkspaceTopLink[]
 }
 
+// AnalyticsExportFilter 是点击明细导出的组合筛选条件
+export interface AnalyticsExportFilter {
+  link_id?: string
+  days: number
+  visitor: 'all' | 'human' | 'bot'
+  device: '' | 'desktop' | 'mobile' | 'tablet'
+  country: string
+  browser: string
+  utm_source: string
+}
+
 // APIKeyScope 是当前后端支持的 API Key 权限
 export type APIKeyScope =
   | 'links:read'

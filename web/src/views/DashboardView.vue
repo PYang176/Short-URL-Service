@@ -6,6 +6,7 @@ import { RouterLink } from 'vue-router'
 import { getWorkspaceAnalytics } from '@/api'
 import { ApiError } from '@/api/http'
 import type { WorkspaceAnalyticsOverview } from '@/api/types'
+import AnalyticsExportPanel from '@/components/AnalyticsExportPanel.vue'
 import LinkFormDialog from '@/components/LinkFormDialog.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import { useLinks } from '@/composables/useLinks'
@@ -173,6 +174,8 @@ async function handleCreated(): Promise<void> {
         </ol>
       </section>
     </div>
+
+    <AnalyticsExportPanel />
 
     <section class="panel">
       <div class="section-heading-row">
