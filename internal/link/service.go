@@ -41,6 +41,8 @@ type Service struct {
 	defaultDomain *Domain
 	// domains 校验自定义域名归属和 Host 路由
 	domains DomainAuthorizer
+	// destinationPolicy 检查目标域名黑名单
+	destinationPolicy DestinationPolicy
 	// cacheGroup 合并同一短码的并发回源
 	cacheGroup singleflight.Group
 	// now 提供可替换的 UTC 时间
@@ -55,6 +57,12 @@ type DomainAuthorizer interface {
 	ResolveVerifiedHost(ctx context.Context, hostname string) (string, error)
 }
 
+// DestinationPolicy 定义创建和修改短链前的目标安全策略
+type DestinationPolicy interface {
+	// IsDestinationBlocked 判断规范化目标 URL 是否命中阻断规则
+	IsDestinationBlocked(ctx context.Context, destinationURL string) (bool, error)
+}
+
 // NewService 创建短链接服务
 func NewService(
 	repo Repository,
@@ -62,19 +70,24 @@ func NewService(
 	logger *slog.Logger,
 	publicBaseURL string,
 	domains DomainAuthorizer,
+	destinationPolicies ...DestinationPolicy,
 ) (*Service, error) {
 	baseURL, err := url.Parse(publicBaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("解析公开短链根地址失败: %w", err)
 	}
-	return &Service{
+	service := &Service{
 		repo:    repo,
 		redis:   redisClient,
 		logger:  logger,
 		baseURL: baseURL,
 		domains: domains,
 		now:     func() time.Time { return time.Now().UTC() },
-	}, nil
+	}
+	if len(destinationPolicies) > 0 {
+		service.destinationPolicy = destinationPolicies[0]
+	}
+	return service, nil
 }
 
 // Initialize 创建或加载平台默认域名
@@ -96,6 +109,9 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateIn
 
 	destination, destinationHash, err := normalizeDestination(input.DestinationURL)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkDestinationPolicy(ctx, destination); err != nil {
 		return nil, err
 	}
 	title := strings.TrimSpace(input.Title)
@@ -220,6 +236,9 @@ func (s *Service) Update(
 		}
 		current.DestinationURL = destination
 		current.DestinationHash = destinationHash[:]
+		if err := s.checkDestinationPolicy(ctx, destination); err != nil {
+			return nil, err
+		}
 	}
 	if input.Title != nil {
 		title := strings.TrimSpace(*input.Title)
@@ -540,6 +559,24 @@ func (s *Service) newLinkEvent(
 		return nil, fmt.Errorf("序列化链接 Webhook 事件失败: %w", err)
 	}
 	return &OutboxEvent{ID: eventID, Type: eventType, Payload: payload}, nil
+}
+
+// checkDestinationPolicy 在写入链接前执行目标域名安全策略
+func (s *Service) checkDestinationPolicy(
+	ctx context.Context,
+	destinationURL string,
+) error {
+	if s.destinationPolicy == nil {
+		return nil
+	}
+	blocked, err := s.destinationPolicy.IsDestinationBlocked(ctx, destinationURL)
+	if err != nil {
+		return fmt.Errorf("检查目标域名安全策略失败: %w", err)
+	}
+	if blocked {
+		return fmt.Errorf("%w: 目标域名已被平台阻断", ErrInvalidInput)
+	}
+	return nil
 }
 
 // newID 生成短链接业务使用的 ULID

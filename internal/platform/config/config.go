@@ -156,6 +156,8 @@ type RateLimitConfig struct {
 	Redirect RateLimitRule
 	// TrialCreate 限制匿名游客创建短链
 	TrialCreate RateLimitRule
+	// AbuseReport 限制公开滥用举报
+	AbuseReport RateLimitRule
 }
 
 // SecurityConfig 定义 HTTP 请求安全边界
@@ -257,6 +259,12 @@ func Load() (Config, error) {
 			Redirect:   getRateLimitRule("RATE_LIMIT_REDIRECT", 600, time.Minute, false),
 			TrialCreate: getRateLimitRule(
 				"RATE_LIMIT_TRIAL_CREATE",
+				10,
+				time.Hour,
+				true,
+			),
+			AbuseReport: getRateLimitRule(
+				"RATE_LIMIT_ABUSE_REPORT",
 				10,
 				time.Hour,
 				true,
@@ -392,6 +400,7 @@ func (c Config) Validate() error {
 		"create_link":  c.RateLimit.CreateLink,
 		"redirect":     c.RateLimit.Redirect,
 		"trial_create": c.RateLimit.TrialCreate,
+		"abuse_report": c.RateLimit.AbuseReport,
 	} {
 		if rule.Limit <= 0 || rule.Window <= 0 {
 			return fmt.Errorf("限流规则 %s 的参数无效", name)

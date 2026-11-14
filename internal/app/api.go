@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/PYang176/Short-URL-Service/internal/abuse"
 	"github.com/PYang176/Short-URL-Service/internal/analytics"
 	"github.com/PYang176/Short-URL-Service/internal/apikey"
 	domainpkg "github.com/PYang176/Short-URL-Service/internal/domain"
@@ -80,12 +81,14 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 	)
 	domainHandler := domainpkg.NewHandler(domainService)
 	linkRepo := link.NewMySQLRepository(db)
+	abuseRepo := abuse.NewMySQLRepository(db)
 	linkService, err := link.NewService(
 		linkRepo,
 		redisClient,
 		logger,
 		cfg.PublicBaseURL,
 		domainService,
+		abuse.NewDestinationChecker(abuseRepo),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("初始化短链接服务失败: %w", err)
@@ -97,6 +100,8 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 	idempotencyRepo := idempotency.NewMySQLRepository(db)
 	idempotencyService := idempotency.NewService(idempotencyRepo, cfg.Idempotency.TTL)
 	linkHandler := link.NewHandler(linkService, clickRecorder, idempotencyService, logger)
+	abuseService := abuse.NewService(abuseRepo, linkService)
+	abuseHandler := abuse.NewHandler(abuseService, logger)
 	analyticsRepo := analytics.NewMySQLRepository(db)
 	analyticsService := analytics.NewService(analyticsRepo, linkRepo)
 	analyticsHandler := analytics.NewHandler(analyticsService, logger)
@@ -136,6 +141,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		APIKeyAuth: apiKeyService,
 		Trial:      trialHandler,
 		Webhooks:   webhookHandler,
+		Abuse:      abuseHandler,
 		Tokens:     tokenManager,
 		Limiter:    slidingWindowLimiter,
 		APIVersion: "v1",

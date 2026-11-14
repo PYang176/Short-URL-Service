@@ -142,6 +142,7 @@ func TestValidateRejectsInvalidTrialConfig(t *testing.T) {
 			CreateLink:  validRule,
 			Redirect:    validRule,
 			TrialCreate: validRule,
+			AbuseReport: validRule,
 		},
 		Security: SecurityConfig{MaxBodyBytes: 1024, MaxHeaderBytes: 1024},
 		Idempotency: IdempotencyConfig{
@@ -221,6 +222,7 @@ func TestValidateRejectsPrivateWebhookTargetsInProduction(t *testing.T) {
 			CreateLink:  validRule,
 			Redirect:    validRule,
 			TrialCreate: validRule,
+			AbuseReport: validRule,
 		},
 		Security: SecurityConfig{MaxBodyBytes: 1024, MaxHeaderBytes: 1024},
 		Idempotency: IdempotencyConfig{

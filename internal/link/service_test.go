@@ -119,6 +119,41 @@ func TestServiceEmitsOutboxEvents(t *testing.T) {
 	}
 }
 
+// TestServiceRejectsBlockedDestination 验证黑名单目标不能创建或修改为可跳转链接
+func TestServiceRejectsBlockedDestination(t *testing.T) {
+	service, _, cleanup := testService(t)
+	defer cleanup()
+	service.destinationPolicy = fakeDestinationPolicy{blocked: true}
+
+	_, err := service.Create(context.Background(), "workspace-1", CreateInput{
+		DestinationURL: "https://blocked.example/phishing",
+		Alias:          "blocked",
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Create() error = %v, want ErrInvalidInput", err)
+	}
+
+	service.destinationPolicy = fakeDestinationPolicy{}
+	created, err := service.Create(context.Background(), "workspace-1", CreateInput{
+		DestinationURL: "https://allowed.example/start",
+		Alias:          "allowed",
+	})
+	if err != nil {
+		t.Fatalf("Create() allowed error = %v", err)
+	}
+	service.destinationPolicy = fakeDestinationPolicy{blocked: true}
+	destination := "https://blocked.example/after-update"
+	_, err = service.Update(
+		context.Background(),
+		"workspace-1",
+		created.ID,
+		UpdateInput{DestinationURL: &destination},
+	)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Update() error = %v, want ErrInvalidInput", err)
+	}
+}
+
 // TestServiceResolveFallsBackWhenRedisUnavailable 验证 Redis 故障时仍可回源 MySQL
 func TestServiceResolveFallsBackWhenRedisUnavailable(t *testing.T) {
 	service, _, cleanup := testService(t)
@@ -409,6 +444,18 @@ type fakeDomainAuthorizer struct{}
 // AuthorizeLinkDomain 返回固定已验证自定义域名
 func (fakeDomainAuthorizer) AuthorizeLinkDomain(context.Context, string, string) (string, error) {
 	return "go.example.com", nil
+}
+
+type fakeDestinationPolicy struct {
+	blocked bool
+}
+
+// IsDestinationBlocked 返回测试配置的目标阻断结果
+func (f fakeDestinationPolicy) IsDestinationBlocked(
+	context.Context,
+	string,
+) (bool, error) {
+	return f.blocked, nil
 }
 
 // ResolveVerifiedHost 返回固定自定义域名 ID

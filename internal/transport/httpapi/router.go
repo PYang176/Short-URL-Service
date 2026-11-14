@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 
+	"github.com/PYang176/Short-URL-Service/internal/abuse"
 	"github.com/PYang176/Short-URL-Service/internal/analytics"
 	"github.com/PYang176/Short-URL-Service/internal/apikey"
 	"github.com/PYang176/Short-URL-Service/internal/domain"
@@ -45,6 +46,8 @@ type Dependencies struct {
 	Trial *trial.Handler
 	// Webhooks 是 Webhook 配置和投递记录接口处理器
 	Webhooks *webhook.Handler
+	// Abuse 是公开举报和管理员治理接口处理器
+	Abuse *abuse.Handler
 	// Tokens 是受保护路由使用的 Access Token 管理器
 	Tokens *identity.TokenManager
 	// Limiter 是共享 Redis 滑动窗口限流器
@@ -135,6 +138,22 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	}
 	trialAPI.GET("/links", deps.Trial.List)
 
+	abuseAPI := api.Group("/abuse")
+	if deps.Config.RateLimit.Enabled {
+		abuseAPI.POST(
+			"/reports",
+			RateLimitByIP(
+				deps.Limiter,
+				deps.Logger,
+				"abuse:report",
+				deps.Config.RateLimit.AbuseReport,
+			),
+			deps.Abuse.CreateReport,
+		)
+	} else {
+		abuseAPI.POST("/reports", deps.Abuse.CreateReport)
+	}
+
 	protected := api.Group("")
 	protected.Use(RequireAuth(deps.Tokens))
 	if deps.Config.RateLimit.Enabled {
@@ -153,6 +172,11 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	admin.POST("/webhooks", deps.Webhooks.Create)
 	admin.DELETE("/webhooks/:id", deps.Webhooks.Disable)
 	admin.GET("/webhooks/:id/deliveries", deps.Webhooks.ListDeliveries)
+	admin.GET("/abuse/reports", deps.Abuse.ListReports)
+	admin.POST("/abuse/reports/:id/resolve", deps.Abuse.ResolveReport)
+	admin.GET("/abuse/blocked-domains", deps.Abuse.ListBlockedDomains)
+	admin.POST("/abuse/blocked-domains", deps.Abuse.AddBlockedDomain)
+	admin.DELETE("/abuse/blocked-domains/:id", deps.Abuse.RemoveBlockedDomain)
 	admin.GET("/domains", deps.Domains.List)
 	admin.POST("/domains", deps.Domains.Add)
 	admin.POST("/domains/:id/verify", deps.Domains.Verify)
