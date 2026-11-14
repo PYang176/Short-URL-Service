@@ -47,8 +47,17 @@
 | --- | --- |
 | <img src="docs/assets/screenshots/07-share-management.png" alt="公开分享管理" width="80%"> | <img src="docs/assets/screenshots/08-public-report.png" alt="公开只读分析报告" width="100%"> |
 
-截图使用 `example.com` 目标和临时演示账号生成。截图中的公开分享在采集完成后
-已撤销，不包含真实用户数据或有效分享 Token。
+| Grafana 运行监控 |
+| --- |
+| <img src="docs/assets/screenshots/09-grafana-overview.png" alt="Grafana 运行监控面板" width="100%"> |
+
+截图使用 `example.com` 目标和临时演示账号生成。访问趋势使用确定性生成的
+最近 7 天演示点击数据，仅用于展示功能，不代表真实业务流量。截图中的公开分享
+在采集完成后已撤销，不包含真实用户数据或有效分享 Token。
+
+Grafana 截图在停止压测前采集，页面包含 HTTP 成功率、API/Worker CPU、
+进程内存、点击消费速率、Stream 保留条目、Pending、ACK 错误和 Webhook 投递
+速率。
 
 ## 3. 系统设计
 
@@ -301,6 +310,16 @@ python web\scripts\e2e.py
 
 当前 E2E 覆盖免登录试用、注册认领、普通用户权限、指标端口隔离、短链创建、
 公开举报、访问分析、二维码下载、编辑、服务端搜索、公开分享和撤销失效。
+
+生成带 7 天趋势的演示数据：
+
+```powershell
+$env:SHORTURL_MYSQL_DSN='user:password@tcp(127.0.0.1:3306)/short_url?parseTime=true&loc=UTC'
+.\scripts\seed-demo.ps1 -Email demo@example.com -HistoryDays 7 -ResetHistory
+```
+
+`-ResetHistory` 只清空目标演示工作空间的点击事件，再写入稳定种子数据。
+重复执行相同种子不会重复累加相同历史记录。
 
 ## 9. 核心接口
 

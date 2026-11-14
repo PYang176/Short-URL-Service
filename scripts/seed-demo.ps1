@@ -2,6 +2,8 @@ param(
     [string]$BaseURL = "http://127.0.0.1:18080",
     [string]$Email = "demo@example.com",
     [string]$Password,
+    [int]$HistoryDays = 7,
+    [switch]$ResetHistory,
     [switch]$AllowRemote,
     [switch]$SkipClicks
 )
@@ -96,6 +98,33 @@ if (-not $SkipClicks) {
         curl.exe -s -o NUL -A "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0.0.0 Safari/537.36" $link.short_url
         curl.exe -s -o NUL -A "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0.0.0 Safari/537.36" $link.short_url
         curl.exe -s -o NUL -A "Googlebot/2.1" $link.short_url
+    }
+}
+
+if ($HistoryDays -gt 0) {
+    if ([string]::IsNullOrWhiteSpace($env:SHORTURL_MYSQL_DSN)) {
+        Write-Warning "未设置 SHORTURL_MYSQL_DSN，跳过历史趋势数据。"
+    } else {
+        Push-Location (Split-Path -Parent $PSScriptRoot)
+        try {
+            $historyArgs = @(
+                "run",
+                ".\cmd\seed-demo-history",
+                "-email",
+                $Email,
+                "-days",
+                "$HistoryDays"
+            )
+            if ($ResetHistory) {
+                $historyArgs += "-reset"
+            }
+            go @historyArgs
+            if ($LASTEXITCODE -ne 0) {
+                throw "生成演示历史数据失败，退出码: $LASTEXITCODE"
+            }
+        } finally {
+            Pop-Location
+        }
     }
 }
 

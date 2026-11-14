@@ -43,11 +43,13 @@ API 和 Worker 的宿主机调试端口也只绑定 `127.0.0.1`。外部访问�
 
 - HTTP 请求速率和状态码分布。
 - HTTP P95/P99 延迟。
-- Redis Stream 长度和 Pending 数量。
-- 点击消费成功、失败和无效消息速率。
+- HTTP 成功率。
+- API 与 Worker CPU 使用率。
+- API 与 Worker 进程常驻内存。
+- 点击消费结果速率。
+- Redis Stream 保留条目和 Pending 数量。
 - ACK 错误。
 - Webhook 投递成功率和失败率。
-- API 与 Worker 进程常驻内存。
 
 仪表盘只读 provisioning，Git 中的 JSON 是唯一配置来源。
 

@@ -13,6 +13,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "按 HTTP 状态码统计最近 5 分钟的请求速率。",
       "fieldConfig": {
         "defaults": {
           "unit": "reqps"
@@ -53,6 +54,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "HTTP 请求耗时 P95 与 P99，包含公开跳转和管理接口。",
       "fieldConfig": {
         "defaults": {
           "unit": "s"
@@ -100,28 +102,32 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "最近 5 分钟非 5xx 请求占比。",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "max": 100,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               },
               {
                 "color": "orange",
-                "value": 100
+                "value": 95
               },
               {
-                "color": "red",
-                "value": 1000
+                "color": "green",
+                "value": 99
               }
             ]
-          }
+          },
+          "unit": "percent"
         },
         "overrides": []
       },
@@ -147,13 +153,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max(shorturl_click_stream_length)",
-          "legendFormat": "Stream 长度",
-          "range": true,
+          "expr": "(1 - ((sum(rate(shorturl_http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(shorturl_http_requests_total[5m])), 1))) * 100",
+          "legendFormat": "成功率",
+          "range": false,
           "refId": "A"
         }
       ],
-      "title": "点击 Stream 长度",
+      "title": "HTTP 成功率",
       "type": "stat"
     },
     {
@@ -161,28 +167,11 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "API 进程最近 1 分钟 CPU 使用率，1 表示占满一个 CPU 核。",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 100
-              },
-              {
-                "color": "red",
-                "value": 1000
-              }
-            ]
-          }
+          "decimals": 2,
+          "unit": "percentunit"
         },
         "overrides": []
       },
@@ -208,13 +197,13 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max(shorturl_click_pending_count)",
-          "legendFormat": "Pending",
-          "range": true,
+          "expr": "sum(rate(process_cpu_seconds_total{job=\"shorturl-api\"}[1m]))",
+          "legendFormat": "API CPU",
+          "range": false,
           "refId": "A"
         }
       ],
-      "title": "点击 Pending 数量",
+      "title": "API CPU",
       "type": "stat"
     },
     {
@@ -222,6 +211,94 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Worker 进程最近 1 分钟 CPU 使用率，1 表示占满一个 CPU 核。",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(rate(process_cpu_seconds_total{job=\"shorturl-worker\"}[1m]))",
+          "legendFormat": "Worker CPU",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Worker CPU",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "API 与 Worker 当前常驻内存。",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (job) (process_resident_memory_bytes{job=~\"shorturl-.*\"})",
+          "legendFormat": "{{job}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "进程常驻内存",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Worker 最近 5 分钟消费点击事件的速率。",
       "fieldConfig": {
         "defaults": {
           "unit": "cps"
@@ -229,12 +306,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 7,
         "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 0,
+        "y": 13
       },
-      "id": 5,
+      "id": 7,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -262,6 +339,133 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Redis Stream 当前保留的消息数。已消费事件仍可能保留，Pending 才表示待接管消息。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 500000
+              },
+              {
+                "color": "red",
+                "value": 900000
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 13
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(shorturl_click_stream_length)",
+          "legendFormat": "Stream 保留条目",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Stream 保留条目",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Consumer Group 当前 Pending 数。持续增长表示 Worker 无法及时 ACK。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 13
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(shorturl_click_pending_count)",
+          "legendFormat": "Pending",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "点击 Pending",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "最近 5 分钟 ACK 失败次数；没有失败时显示 0。",
       "fieldConfig": {
         "defaults": {
           "unit": "short"
@@ -270,11 +474,11 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 13
+        "y": 20
       },
-      "id": 6,
+      "id": 10,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -288,7 +492,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(shorturl_click_ack_errors_total[5m]))",
+          "expr": "sum(increase(shorturl_click_ack_errors_total[5m])) or vector(0)",
           "legendFormat": "ACK 错误",
           "range": true,
           "refId": "A"
@@ -302,46 +506,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 12,
-        "y": 13
-      },
-      "id": 7,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "sum by (job) (process_resident_memory_bytes)",
-          "legendFormat": "{{job}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "进程常驻内存",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "description": "Webhook 最近 5 分钟投递速率；没有投递时显示 0。",
       "fieldConfig": {
         "defaults": {
           "unit": "cps"
@@ -350,11 +515,11 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 18
+        "w": 16,
+        "x": 8,
+        "y": 20
       },
-      "id": 8,
+      "id": 11,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -368,7 +533,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (event_type, result) (rate(shorturl_webhook_delivery_total[5m]))",
+          "expr": "sum by (event_type, result) (rate(shorturl_webhook_delivery_total[5m])) or vector(0)",
           "legendFormat": "{{event_type}} · {{result}}",
           "range": true,
           "refId": "A"
@@ -385,12 +550,12 @@
     "list": []
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Short URL Overview",
   "uid": "shorturl-overview",
-  "version": 1
+  "version": 2
 }
