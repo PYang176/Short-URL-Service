@@ -8,14 +8,20 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: () => import('@/views/LoginView.vue'),
-      meta: { guestOnly: true, title: '登录' },
+      redirect: (to) => ({
+        name: 'try',
+        query: { ...to.query, auth: 'login' },
+      }),
+      meta: { title: '登录' },
     },
     {
       path: '/register',
       name: 'register',
-      component: () => import('@/views/RegisterView.vue'),
-      meta: { guestOnly: true, title: '注册' },
+      redirect: (to) => ({
+        name: 'try',
+        query: { ...to.query, auth: 'register' },
+      }),
+      meta: { title: '注册' },
     },
     {
       path: '/try',
@@ -92,7 +98,10 @@ const router = createRouter({
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    return {
+      name: 'try',
+      query: { auth: 'login', redirect: to.fullPath },
+    }
   }
   if (to.meta.guestOnly && auth.isAuthenticated) {
     return { name: 'dashboard' }

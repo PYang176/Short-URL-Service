@@ -89,13 +89,11 @@ def main() -> None:
         assert page.get_by_role("link", name="开发者").count() == 0
         assert page.get_by_role("link", name="域名").count() == 0
 
-        page.get_by_role("button", name="创建短链接").click()
-        dialog = page.get_by_role("dialog")
-        dialog.get_by_label("目标地址").fill("https://example.com/original")
-        dialog.get_by_label("自定义短码").fill(alias)
-        dialog.get_by_label("标题").fill("浏览器验收短链")
-        dialog.get_by_role("button", name="创建短链").click()
-        page.locator(".recent-list").get_by_text("浏览器验收短链").wait_for()
+        quick_create = page.locator(".quick-create-panel")
+        quick_create.get_by_label("目标地址").fill("https://example.com/original")
+        quick_create.get_by_label("自定义短码").fill(alias)
+        quick_create.get_by_role("button", name="生成短链接").click()
+        page.locator(".dashboard-link-list").get_by_text(f"/{alias}").wait_for()
         page.get_by_text("整体点击趋势").wait_for()
         page.screenshot(path=ARTIFACT_DIR / "dashboard-desktop.png", full_page=True)
 
@@ -127,13 +125,10 @@ def main() -> None:
         page.goto(f"{BASE_URL}/dashboard")
         page.wait_for_load_state("networkidle")
 
-        page.locator(".recent-list").get_by_role(
-            "link",
-            name="浏览器验收短链",
-        ).click()
+        page.locator(".dashboard-link-list").get_by_text(f"/{alias}").click()
         page.wait_for_url("**/links/**")
         page.wait_for_load_state("networkidle")
-        page.get_by_role("heading", name="浏览器验收短链").wait_for()
+        page.get_by_role("heading", name=f"/{alias}").wait_for()
 
         for user_agent in (
             "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0.0.0 Safari/537.36",

@@ -14,9 +14,17 @@ const auth = useAuthStore(pinia)
 await auth.restoreSession()
 
 window.addEventListener('shorturl:auth-expired', () => {
+  const currentRoute = router.currentRoute.value
   auth.clearLocalSession()
-  if (router.currentRoute.value.name !== 'login') {
-    void router.replace({ name: 'login', query: { expired: '1' } })
+  if (currentRoute.query.auth !== 'login') {
+    const query: Record<string, string> = {
+      auth: 'login',
+      expired: '1',
+    }
+    if (currentRoute.meta.requiresAuth && currentRoute.fullPath !== '/') {
+      query.redirect = currentRoute.fullPath
+    }
+    void router.replace({ name: 'try', query })
   }
 })
 
