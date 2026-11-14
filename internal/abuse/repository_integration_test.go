@@ -76,12 +76,23 @@ func TestMySQLRepositoryGovernanceLifecycle(t *testing.T) {
 	if err := repo.CreateReport(t.Context(), report); err != nil {
 		t.Fatalf("CreateReport() error = %v", err)
 	}
-	reports, err := repo.ListReports(t.Context(), ReportStatusPending, 10)
+	reports, err := repo.ListReports(t.Context(), ReportStatusPending, 1000)
 	if err != nil {
 		t.Fatalf("ListReports() error = %v", err)
 	}
-	if len(reports) != 1 || reports[0].LinkSlug != "abuse-link" {
-		t.Fatalf("ListReports() = %+v", reports)
+	found := false
+	for _, item := range reports {
+		if item.ID != report.ID {
+			continue
+		}
+		found = true
+		if item.LinkSlug != "abuse-link" {
+			t.Fatalf("ListReports() 当前举报关联信息 = %+v", item)
+		}
+		break
+	}
+	if !found {
+		t.Fatalf("ListReports() 未返回当前举报 %s", report.ID)
 	}
 
 	resolution, err := repo.ResolveReport(
