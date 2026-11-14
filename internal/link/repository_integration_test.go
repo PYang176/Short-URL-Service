@@ -139,12 +139,38 @@ func TestMySQLRepositoryLifecycle(t *testing.T) {
 		t.Fatalf("目标地址 = %q, want %q", found.DestinationURL, destination)
 	}
 
-	links, err := repo.List(t.Context(), workspaceID, 20, nil, "")
+	links, err := repo.List(t.Context(), workspaceID, 20, nil, "", ListFilter{})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 	if len(links) != 2 {
 		t.Fatalf("List() count = %d, want 2", len(links))
+	}
+	filtered, err := repo.List(
+		t.Context(),
+		workspaceID,
+		20,
+		nil,
+		"",
+		ListFilter{Query: "idempotent"},
+	)
+	if err != nil {
+		t.Fatalf("筛选 List() error = %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != idempotent.ID {
+		t.Fatalf("搜索筛选结果 = %+v", filtered)
+	}
+	disabledStatus := StatusDisabled
+	filtered, err = repo.List(
+		t.Context(),
+		workspaceID,
+		20,
+		nil,
+		"",
+		ListFilter{Status: &disabledStatus},
+	)
+	if err != nil || len(filtered) != 0 {
+		t.Fatalf("禁用状态筛选 = %+v, error=%v", filtered, err)
 	}
 
 	found.DestinationURL = "https://example.com/changed"

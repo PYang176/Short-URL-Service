@@ -167,7 +167,14 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 
-	links, err := h.links.List(c.Request.Context(), session.WorkspaceID, h.sessions.MaxLinks(), nil, "")
+	links, err := h.links.List(
+		c.Request.Context(),
+		session.WorkspaceID,
+		h.sessions.MaxLinks(),
+		nil,
+		"",
+		link.ListFilter{},
+	)
 	if err != nil {
 		h.logger.Error("查询游客短链失败", "error", err)
 		h.writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")

@@ -70,6 +70,18 @@ paths:
           in: query
           schema:
             type: string
+        - name: q
+          in: query
+          description: 按标题、短码或目标地址搜索
+          schema:
+            type: string
+            maxLength: 100
+        - name: status
+          in: query
+          description: 按链接状态筛选
+          schema:
+            type: integer
+            enum: [1, 2]
       responses:
         "200":
           description: 链接列表

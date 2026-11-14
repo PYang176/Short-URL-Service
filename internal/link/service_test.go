@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -375,12 +376,24 @@ func (r *fakeRepository) List(
 	limit int,
 	beforeCreatedAt *time.Time,
 	beforeID string,
+	filter ListFilter,
 ) ([]Link, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	result := make([]Link, 0, len(r.links))
 	for _, link := range r.links {
 		if link.WorkspaceID != workspaceID || link.DeletedAt != nil {
+			continue
+		}
+		if filter.Query != "" {
+			keyword := strings.ToLower(filter.Query)
+			if !strings.Contains(strings.ToLower(link.Title), keyword) &&
+				!strings.Contains(strings.ToLower(link.Slug), keyword) &&
+				!strings.Contains(strings.ToLower(link.DestinationURL), keyword) {
+				continue
+			}
+		}
+		if filter.Status != nil && link.Status != *filter.Status {
 			continue
 		}
 		if beforeCreatedAt != nil && !link.CreatedAt.Before(*beforeCreatedAt) && link.ID >= beforeID {

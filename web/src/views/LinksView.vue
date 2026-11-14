@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { deleteLink } from '@/api'
@@ -33,22 +33,35 @@ const bulkOpen = shallowRef(false)
 const editingLink = shallowRef<Link | null>(null)
 const notice = shallowRef('')
 
-const filteredLinks = computed(() => {
-  const keyword = query.value.trim().toLowerCase()
-  return links.value.filter((link) => {
-    const statusMatches =
-      statusFilter.value === 'all' ||
-      String(link.status) === statusFilter.value
-    const keywordMatches =
-      !keyword ||
-      link.title.toLowerCase().includes(keyword) ||
-      link.slug.toLowerCase().includes(keyword) ||
-      link.destination_url.toLowerCase().includes(keyword)
-    return statusMatches && keywordMatches
-  })
-})
+const hasActiveFilters = computed(
+  () => query.value.trim() !== '' || statusFilter.value !== 'all',
+)
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 
-onMounted(load)
+watch(
+  [query, statusFilter],
+  ([nextQuery, nextStatus]) => {
+    if (searchTimer) {
+      clearTimeout(searchTimer)
+    }
+    searchTimer = setTimeout(() => {
+      void load({
+        query: nextQuery,
+        status:
+          nextStatus === 'all'
+            ? undefined
+            : (Number(nextStatus) as 1 | 2),
+      })
+    }, 300)
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+  }
+})
 
 // copyLink 复制短链地址并显示反馈
 async function copyLink(link: Link): Promise<void> {
@@ -137,7 +150,7 @@ async function handleBulkImported(count: number): Promise<void> {
             <option value="2">停用</option>
           </select>
         </label>
-        <span class="toolbar-count">{{ filteredLinks.length }} 条</span>
+        <span class="toolbar-count">{{ links.length }} 条</span>
       </div>
 
       <p v-if="notice" class="inline-notice" role="status">{{ notice }}</p>
@@ -147,20 +160,20 @@ async function handleBulkImported(count: number): Promise<void> {
       </div>
       <div v-else-if="errorMessage" class="error-panel" role="alert">
         <p>{{ errorMessage }}</p>
-        <button class="secondary-button" type="button" @click="load">重新加载</button>
+        <button class="secondary-button" type="button" @click="load()">重新加载</button>
       </div>
-      <div v-else-if="filteredLinks.length === 0" class="empty-state">
-        <h2>{{ links.length === 0 ? '还没有短链接' : '没有匹配结果' }}</h2>
+      <div v-else-if="links.length === 0" class="empty-state">
+        <h2>{{ hasActiveFilters ? '没有匹配结果' : '还没有短链接' }}</h2>
         <p>
           {{
-            links.length === 0
-              ? '从一个目标地址开始，系统会生成安全随机短码。'
-              : '调整搜索词或状态筛选。'
+            hasActiveFilters
+              ? '调整搜索词或状态筛选后再试。'
+              : '从一个目标地址开始，系统会生成安全随机短码。'
           }}
         </p>
       </div>
       <div v-else class="link-table" role="list">
-        <article v-for="link in filteredLinks" :key="link.id" class="link-row" role="listitem">
+        <article v-for="link in links" :key="link.id" class="link-row" role="listitem">
           <span class="link-status" :class="{ 'is-disabled': link.status !== 1 }">
             {{ statusLabel(link.status) }}
           </span>

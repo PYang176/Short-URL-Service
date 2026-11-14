@@ -207,11 +207,19 @@ func (s *Service) List(
 	limit int,
 	beforeCreatedAt *time.Time,
 	beforeID string,
+	filter ListFilter,
 ) ([]Link, error) {
 	if limit < 1 || limit > 100 {
 		return nil, fmt.Errorf("%w: limit 必须为 1 至 100", ErrInvalidInput)
 	}
-	return s.repo.List(ctx, workspaceID, limit, beforeCreatedAt, beforeID)
+	filter.Query = strings.TrimSpace(filter.Query)
+	if len([]rune(filter.Query)) > 100 {
+		return nil, fmt.Errorf("%w: 搜索词不能超过 100 个字符", ErrInvalidInput)
+	}
+	if filter.Status != nil && *filter.Status != StatusActive && *filter.Status != StatusDisabled {
+		return nil, fmt.Errorf("%w: 链接状态筛选无效", ErrInvalidInput)
+	}
+	return s.repo.List(ctx, workspaceID, limit, beforeCreatedAt, beforeID, filter)
 }
 
 // Get 返回工作空间内的单个链接

@@ -406,6 +406,16 @@ func (h *Handler) List(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "INVALID_CURSOR", "分页游标无效")
 		return
 	}
+	filter := ListFilter{Query: strings.TrimSpace(c.Query("q"))}
+	if rawStatus := strings.TrimSpace(c.Query("status")); rawStatus != "" {
+		parsed, parseErr := strconv.Atoi(rawStatus)
+		if parseErr != nil || (parsed != int(StatusActive) && parsed != int(StatusDisabled)) {
+			writeError(c, http.StatusBadRequest, "INVALID_FILTER", "状态筛选只能为 1 或 2")
+			return
+		}
+		status := uint8(parsed)
+		filter.Status = &status
+	}
 
 	links, err := h.service.List(
 		c.Request.Context(),
@@ -413,6 +423,7 @@ func (h *Handler) List(c *gin.Context) {
 		limit,
 		beforeCreatedAt,
 		beforeID,
+		filter,
 	)
 	if err != nil {
 		writeLinkError(c, err)

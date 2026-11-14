@@ -104,6 +104,14 @@ type CreateInput struct {
 	ExpiresAt *time.Time
 }
 
+// ListFilter 是链接列表的组合筛选条件。
+type ListFilter struct {
+	// Query 是标题、短码或目标地址的模糊搜索关键词
+	Query string
+	// Status 为 nil 时不过滤，否则只返回指定状态
+	Status *uint8
+}
+
 // UpdateInput 是修改短链接的可选字段
 type UpdateInput struct {
 	// DestinationURL 是可选的新目标地址

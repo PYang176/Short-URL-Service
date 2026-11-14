@@ -77,6 +77,12 @@ export interface LinkListResponse {
   next_cursor: string
 }
 
+// LinkListFilter 是服务端链接列表的组合筛选条件
+export interface LinkListFilter {
+  query?: string
+  status?: 1 | 2
+}
+
 // BulkCreateItem 是 CSV 单行创建结果
 export interface BulkCreateItem {
   row: number

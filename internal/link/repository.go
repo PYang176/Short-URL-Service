@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -20,8 +21,15 @@ type Repository interface {
 	FindByID(ctx context.Context, workspaceID, id string) (*Link, error)
 	// FindByDomainSlug 按域名和短码查询未删除链接
 	FindByDomainSlug(ctx context.Context, domainID, slug string) (*Link, error)
-	// List 按工作空间和游标倒序查询链接
-	List(ctx context.Context, workspaceID string, limit int, beforeCreatedAt *time.Time, beforeID string) ([]Link, error)
+	// List 按工作空间、筛选条件和游标倒序查询链接
+	List(
+		ctx context.Context,
+		workspaceID string,
+		limit int,
+		beforeCreatedAt *time.Time,
+		beforeID string,
+		filter ListFilter,
+	) ([]Link, error)
 	// Update 在同一事务中保存可编辑字段和可选 Webhook 事件
 	Update(ctx context.Context, link *Link, event *OutboxEvent) error
 	// SoftDelete 在同一事务中软删除链接和写入可选 Webhook 事件
@@ -194,6 +202,7 @@ func (r *MySQLRepository) List(
 	limit int,
 	beforeCreatedAt *time.Time,
 	beforeID string,
+	filter ListFilter,
 ) ([]Link, error) {
 	query := `
 		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
@@ -203,32 +212,40 @@ func (r *MySQLRepository) List(
 			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
 		FROM links AS l
 		INNER JOIN domains AS d ON d.id = l.domain_id
-		WHERE l.workspace_id = ? AND l.deleted_at IS NULL
-		ORDER BY l.created_at DESC, l.id DESC
-		LIMIT ?`
-	args := []any{workspaceID, limit}
-	if beforeCreatedAt != nil && beforeID != "" {
-		query = `
-		SELECT l.id, l.workspace_id, l.domain_id, d.hostname AS domain_hostname,
-			l.slug, l.destination_url, l.destination_hash, l.title, l.notes,
-			COALESCE(l.idempotency_key, '') AS idempotency_key,
-			l.status, l.redirect_code, l.starts_at, l.expires_at,
-			l.human_clicks, l.version, l.created_at, l.updated_at, l.deleted_at
-		FROM links AS l
-		INNER JOIN domains AS d ON d.id = l.domain_id
-		WHERE l.workspace_id = ?
-		  AND l.deleted_at IS NULL
-		  AND (l.created_at, l.id) < (?, ?)
-		ORDER BY l.created_at DESC, l.id DESC
-		LIMIT ?`
-		args = []any{workspaceID, *beforeCreatedAt, beforeID, limit}
+		WHERE l.workspace_id = ? AND l.deleted_at IS NULL`
+	args := []any{workspaceID}
+	if filter.Query != "" {
+		query += `
+		  AND (
+			l.title LIKE ? ESCAPE '!'
+			OR LOWER(l.slug) LIKE ? ESCAPE '!'
+			OR l.destination_url LIKE ? ESCAPE '!'
+		  )`
+		pattern := "%" + escapeLikePattern(strings.ToLower(filter.Query)) + "%"
+		args = append(args, pattern, pattern, pattern)
 	}
+	if filter.Status != nil {
+		query += " AND l.status = ?"
+		args = append(args, *filter.Status)
+	}
+	if beforeCreatedAt != nil && beforeID != "" {
+		query += " AND (l.created_at, l.id) < (?, ?)"
+		args = append(args, *beforeCreatedAt, beforeID)
+	}
+	query += " ORDER BY l.created_at DESC, l.id DESC LIMIT ?"
+	args = append(args, limit)
 
 	links := make([]Link, 0, limit)
 	if err := r.db.SelectContext(ctx, &links, query, args...); err != nil {
 		return nil, fmt.Errorf("查询短链接列表失败: %w", err)
 	}
 	return links, nil
+}
+
+// escapeLikePattern 转义 LIKE 通配符，保证搜索词按普通文本匹配。
+func escapeLikePattern(value string) string {
+	replacer := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_")
+	return replacer.Replace(value)
 }
 
 // Update 在同一事务中保存可编辑字段和可选 Webhook 事件

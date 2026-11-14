@@ -8,6 +8,7 @@ import type {
   Domain,
   DomainListResponse,
   Link,
+  LinkListFilter,
   LinkListResponse,
   ProfileResponse,
   TrialCreateInput,
@@ -76,10 +77,20 @@ export function logout(refreshToken: string): Promise<void> {
 }
 
 // listLinks 获取工作空间链接列表
-export function listLinks(limit = 20, cursor = ''): Promise<LinkListResponse> {
+export function listLinks(
+  limit = 20,
+  cursor = '',
+  filter: LinkListFilter = {},
+): Promise<LinkListResponse> {
   const query = new URLSearchParams({ limit: String(limit) })
   if (cursor) {
     query.set('cursor', cursor)
+  }
+  if (filter.query?.trim()) {
+    query.set('q', filter.query.trim())
+  }
+  if (filter.status) {
+    query.set('status', String(filter.status))
   }
   return requestJSON<LinkListResponse>(`/api/v1/links?${query}`)
 }

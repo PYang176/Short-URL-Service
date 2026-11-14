@@ -145,7 +145,7 @@ watch(() => route.query.create, (value) => void handleCreateIntent(value), {
       </div>
       <div v-else-if="errorMessage" class="error-panel" role="alert">
         <p>{{ errorMessage }}</p>
-        <button class="secondary-button" type="button" @click="load">重新加载</button>
+        <button class="secondary-button" type="button" @click="load()">重新加载</button>
       </div>
       <div v-else-if="recentLinks.length === 0" class="dashboard-empty-state">
         <span class="empty-link-mark" aria-hidden="true">↗</span>

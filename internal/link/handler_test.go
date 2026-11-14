@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -125,6 +126,63 @@ func TestHandlerMapsSlugConflict(t *testing.T) {
 	second := performLinkRequest(t, router, http.MethodPost, "/links", body)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("重复短码状态 = %d, want 409; body=%s", second.Code, second.Body.String())
+	}
+}
+
+// TestHandlerListFilters 验证服务端关键词和状态筛选参数。
+func TestHandlerListFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, repo, cleanup := testService(t)
+	defer cleanup()
+	handler := NewHandler(service, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	created, err := service.Create(t.Context(), "workspace-1", CreateInput{
+		DestinationURL: "https://example.com/campaign",
+		Alias:          "campaign",
+		Title:          "夏季活动",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	disabled := *created
+	disabled.Status = StatusDisabled
+	disabled.Version++
+	disabled.UpdatedAt = disabled.UpdatedAt.Add(time.Second)
+	if err := repo.Update(t.Context(), &disabled, nil); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	router := gin.New()
+	router.Use(withWorkspace("workspace-1"))
+	router.GET("/links", handler.List)
+
+	response := performLinkRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/links?q=campaign&status=2",
+		"",
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("筛选列表状态 = %d, want 200; body=%s", response.Code, response.Body.String())
+	}
+	var result listResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("解析筛选列表失败: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].ID != created.ID {
+		t.Fatalf("筛选列表 = %+v", result.Items)
+	}
+
+	invalid := performLinkRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/links?status=9",
+		"",
+	)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("无效状态筛选 = %d, want 400", invalid.Code)
 	}
 }
 
