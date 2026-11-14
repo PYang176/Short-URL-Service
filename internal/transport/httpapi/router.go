@@ -85,7 +85,10 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	router.GET("/health/live", deps.Health.Live)
 	router.GET("/health/ready", deps.Health.Ready)
 	api := router.Group("/api/v1")
-	api.Use(BodyLimit(deps.Config.Security.MaxBodyBytes), JSONContentType())
+	api.Use(BodyLimitRules(
+		deps.Config.Security.MaxBodyBytes,
+		map[string]int64{"/api/v1/links/bulk": deps.Config.Security.BulkMaxBytes},
+	), JSONContentType())
 	api.GET("/health", deps.Health.Live)
 	api.GET("/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -191,12 +194,23 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			"api:resource",
 			deps.Config.RateLimit.API,
 		))
+		resources.POST("/links/bulk",
+			RequireScope(apikey.ScopeLinksWrite),
+			RateLimitByPrincipal(
+				deps.Limiter,
+				deps.Logger,
+				"api:bulk-create",
+				deps.Config.RateLimit.BulkCreate,
+			),
+			deps.Links.BulkCreate,
+		)
 		resources.POST("/links",
 			RequireScope(apikey.ScopeLinksWrite),
 			RateLimitByPrincipal(deps.Limiter, deps.Logger, "api:create-link", deps.Config.RateLimit.CreateLink),
 			deps.Links.Create,
 		)
 	} else {
+		resources.POST("/links/bulk", RequireScope(apikey.ScopeLinksWrite), deps.Links.BulkCreate)
 		resources.POST("/links", RequireScope(apikey.ScopeLinksWrite), deps.Links.Create)
 	}
 	resources.GET("/links", RequireScope(apikey.ScopeLinksRead), deps.Links.List)

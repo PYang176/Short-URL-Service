@@ -96,6 +96,44 @@ paths:
           description: 链接已创建
         "409":
           description: 短码冲突或幂等键内容不一致
+  /api/v1/links/bulk:
+    post:
+      tags: [Links]
+      summary: 通过 CSV 同步批量创建短链
+      security:
+        - BearerAuth: []
+        - APIKeyAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: UTF-8 CSV，最多 500 个数据行、900 KiB。
+      responses:
+        "200":
+          description: 同步批次逐行结果，合法行成功且失败行不触发整体回滚
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkCreateResponse"
+        "400":
+          description: 文件结构、表头或请求参数无效
+        "413":
+          description: CSV 文件过大
+        "415":
+          description: 必须使用 multipart/form-data
   /api/v1/analytics/overview:
     get:
       tags: [Analytics]
@@ -501,6 +539,39 @@ components:
         redirect_code:
           type: integer
           enum: [301, 302]
+    BulkCreateItem:
+      type: object
+      required: [row, status]
+      properties:
+        row:
+          type: integer
+          minimum: 2
+        status:
+          type: string
+          enum: [created, failed]
+        link:
+          type: object
+          description: 成功行创建的短链安全元数据
+        error_code:
+          type: string
+        error_message:
+          type: string
+    BulkCreateResponse:
+      type: object
+      required: [batch_id, total, succeeded, failed, items]
+      properties:
+        batch_id:
+          type: string
+        total:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkCreateItem"
     CreateAPIKeyRequest:
       type: object
       additionalProperties: false

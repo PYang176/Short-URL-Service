@@ -20,7 +20,22 @@ func SecurityHeaders() gin.HandlerFunc {
 
 // BodyLimit 限制 API 请求体最大字节数
 func BodyLimit(maxBytes int64) gin.HandlerFunc {
+	return BodyLimitRules(maxBytes, nil)
+}
+
+// BodyLimitRules 按最长路径前缀覆盖特定接口的请求体上限
+func BodyLimitRules(defaultMax int64, overrides map[string]int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		maxBytes := defaultMax
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+		for prefix, override := range overrides {
+			if strings.HasPrefix(path, prefix) && override > maxBytes {
+				maxBytes = override
+			}
+		}
 		if c.Request.ContentLength > maxBytes {
 			requestID, _ := c.Get(requestIDKey)
 			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
@@ -48,6 +63,11 @@ func JSONContentType() gin.HandlerFunc {
 				return
 			}
 			contentType := strings.ToLower(c.GetHeader("Content-Type"))
+			if c.Request.URL.Path == "/api/v1/links/bulk" &&
+				strings.HasPrefix(contentType, "multipart/form-data") {
+				c.Next()
+				return
+			}
 			if !strings.HasPrefix(contentType, "application/json") {
 				requestID, _ := c.Get(requestIDKey)
 				c.AbortWithStatusJSON(http.StatusUnsupportedMediaType, gin.H{

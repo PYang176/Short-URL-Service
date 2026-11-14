@@ -152,6 +152,8 @@ type RateLimitConfig struct {
 	API RateLimitRule
 	// CreateLink 限制创建短链
 	CreateLink RateLimitRule
+	// BulkCreate 限制 CSV 批量创建
+	BulkCreate RateLimitRule
 	// Redirect 限制公开跳转
 	Redirect RateLimitRule
 	// TrialCreate 限制匿名游客创建短链
@@ -164,6 +166,8 @@ type RateLimitConfig struct {
 type SecurityConfig struct {
 	// MaxBodyBytes 是 API 请求体最大字节数
 	MaxBodyBytes int64
+	// BulkMaxBytes 是 CSV 批量上传请求体最大字节数
+	BulkMaxBytes int64
 	// MaxHeaderBytes 是 HTTP Header 最大字节数
 	MaxHeaderBytes int
 	// TrustedProxies 是允许提供客户端 IP 的代理 CIDR
@@ -256,6 +260,7 @@ func Load() (Config, error) {
 			Refresh:    getRateLimitRule("RATE_LIMIT_REFRESH", 30, time.Minute, true),
 			API:        getRateLimitRule("RATE_LIMIT_API", 120, time.Minute, false),
 			CreateLink: getRateLimitRule("RATE_LIMIT_CREATE_LINK", 30, time.Minute, false),
+			BulkCreate: getRateLimitRule("RATE_LIMIT_BULK_CREATE", 10, time.Hour, true),
 			Redirect:   getRateLimitRule("RATE_LIMIT_REDIRECT", 600, time.Minute, false),
 			TrialCreate: getRateLimitRule(
 				"RATE_LIMIT_TRIAL_CREATE",
@@ -272,6 +277,7 @@ func Load() (Config, error) {
 		},
 		Security: SecurityConfig{
 			MaxBodyBytes:   int64(getInt("HTTP_MAX_BODY_BYTES", 64*1024)),
+			BulkMaxBytes:   int64(getInt("HTTP_BULK_MAX_BYTES", 1024*1024)),
 			MaxHeaderBytes: getInt("HTTP_MAX_HEADER_BYTES", 16*1024),
 			TrustedProxies: getCSV("HTTP_TRUSTED_PROXIES", "127.0.0.1,::1"),
 		},
@@ -365,6 +371,9 @@ func (c Config) Validate() error {
 	if c.Security.MaxBodyBytes <= 0 || c.Security.MaxHeaderBytes <= 0 {
 		return fmt.Errorf("HTTP 请求安全限制必须大于零")
 	}
+	if c.Security.BulkMaxBytes < c.Security.MaxBodyBytes {
+		return fmt.Errorf("HTTP_BULK_MAX_BYTES 不能小于 HTTP_MAX_BODY_BYTES")
+	}
 	if c.Idempotency.TTL <= 0 {
 		return fmt.Errorf("IDEMPOTENCY_TTL 必须大于零")
 	}
@@ -398,6 +407,7 @@ func (c Config) Validate() error {
 		"refresh":      c.RateLimit.Refresh,
 		"api":          c.RateLimit.API,
 		"create_link":  c.RateLimit.CreateLink,
+		"bulk_create":  c.RateLimit.BulkCreate,
 		"redirect":     c.RateLimit.Redirect,
 		"trial_create": c.RateLimit.TrialCreate,
 		"abuse_report": c.RateLimit.AbuseReport,

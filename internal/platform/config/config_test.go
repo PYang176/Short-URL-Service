@@ -25,6 +25,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HTTP.MetricsAddr != "127.0.0.1:9091" {
 		t.Fatalf("HTTP.MetricsAddr = %q, want internal metrics address", cfg.HTTP.MetricsAddr)
 	}
+	if cfg.Security.BulkMaxBytes != 1024*1024 {
+		t.Fatalf("Security.BulkMaxBytes = %d, want 1 MiB", cfg.Security.BulkMaxBytes)
+	}
 	if cfg.Env != EnvDevelopment {
 		t.Fatalf("Env = %q, want %q", cfg.Env, EnvDevelopment)
 	}
@@ -140,11 +143,16 @@ func TestValidateRejectsInvalidTrialConfig(t *testing.T) {
 			Refresh:     validRule,
 			API:         validRule,
 			CreateLink:  validRule,
+			BulkCreate:  validRule,
 			Redirect:    validRule,
 			TrialCreate: validRule,
 			AbuseReport: validRule,
 		},
-		Security: SecurityConfig{MaxBodyBytes: 1024, MaxHeaderBytes: 1024},
+		Security: SecurityConfig{
+			MaxBodyBytes:   1024,
+			BulkMaxBytes:   4096,
+			MaxHeaderBytes: 1024,
+		},
 		Idempotency: IdempotencyConfig{
 			TTL: time.Hour,
 		},
@@ -220,11 +228,16 @@ func TestValidateRejectsPrivateWebhookTargetsInProduction(t *testing.T) {
 			Refresh:     validRule,
 			API:         validRule,
 			CreateLink:  validRule,
+			BulkCreate:  validRule,
 			Redirect:    validRule,
 			TrialCreate: validRule,
 			AbuseReport: validRule,
 		},
-		Security: SecurityConfig{MaxBodyBytes: 1024, MaxHeaderBytes: 1024},
+		Security: SecurityConfig{
+			MaxBodyBytes:   1024,
+			BulkMaxBytes:   4096,
+			MaxHeaderBytes: 1024,
+		},
 		Idempotency: IdempotencyConfig{
 			TTL: time.Hour,
 		},

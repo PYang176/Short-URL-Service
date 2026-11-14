@@ -26,6 +26,7 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 - 工作空间总链接、启用链接、区间点击、独立访客、整体趋势和 Top 短链。
 - 点击明细支持时间、链接、真人/机器人、设备、国家、浏览器和 UTM 组合筛选，
   并通过 MySQL 游标流式导出 CSV。
+- CSV 同步批量创建，单文件最多 500 行，逐行返回成功、冲突和校验错误。
 - API Key 生命周期、作用域认证、撤销、按 Key 限流和 OpenAPI 3.1 文档。
 - Webhook 端点管理、事务型 Outbox、HMAC-SHA256 签名、重试和自动停用。
 - 公开滥用举报、管理员下架、目标域名黑名单和后台操作审计。
@@ -212,6 +213,7 @@ demo12345
 - 刷新 Token：默认 30 次/分钟/IP，Redis 故障时拒绝。
 - 管理 API：默认 120 次/分钟/工作空间。
 - 创建短链：默认 30 次/分钟/工作空间。
+- CSV 批量创建：默认 10 次/小时/工作空间，Redis 故障时拒绝。
 - 公开举报：默认 10 次/小时/IP，Redis 故障时拒绝。
 - 公开跳转：默认 600 次/分钟/IP。
 
@@ -282,6 +284,7 @@ POST   /api/v1/abuse/blocked-domains
 DELETE /api/v1/abuse/blocked-domains/{id}
 
 POST   /api/v1/links
+POST   /api/v1/links/bulk
 GET    /api/v1/links
 GET    /api/v1/links/{id}
 PATCH  /api/v1/links/{id}

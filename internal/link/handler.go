@@ -122,6 +122,32 @@ type listResponse struct {
 	NextCursor string `json:"next_cursor"`
 }
 
+type bulkCreateItemResponse struct {
+	// Row 是 CSV 数据行号
+	Row int `json:"row"`
+	// Status 是 created 或 failed
+	Status string `json:"status"`
+	// Link 是成功创建的短链
+	Link *linkResponse `json:"link,omitempty"`
+	// ErrorCode 是失败行稳定错误码
+	ErrorCode string `json:"error_code,omitempty"`
+	// ErrorMessage 是失败行错误信息
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+type bulkCreateResponse struct {
+	// BatchID 是本次导入 ULID
+	BatchID string `json:"batch_id"`
+	// Total 是数据行总数
+	Total int `json:"total"`
+	// Succeeded 是成功数量
+	Succeeded int `json:"succeeded"`
+	// Failed 是失败数量
+	Failed int `json:"failed"`
+	// Items 是逐行结果
+	Items []bulkCreateItemResponse `json:"items"`
+}
+
 // QRCode 生成指向稳定短链地址的动态二维码
 func (h *Handler) QRCode(c *gin.Context) {
 	link, err := h.service.Get(
@@ -260,6 +286,94 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 	c.Data(http.StatusCreated, "application/json; charset=utf-8", responseBody)
+}
+
+// BulkCreate 解析 CSV 文件并返回逐行创建结果
+func (h *Handler) BulkCreate(c *gin.Context) {
+	csvBody, err := readBulkCSV(c.Request)
+	if err != nil {
+		switch {
+		case errors.Is(err, errBulkFileTooLarge):
+			writeError(c, http.StatusRequestEntityTooLarge, "BULK_FILE_TOO_LARGE", "CSV 文件不能超过 900 KiB")
+		case errors.Is(err, ErrInvalidInput):
+			writeError(c, http.StatusBadRequest, "INVALID_BULK_UPLOAD", err.Error())
+		default:
+			writeError(c, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "请上传 multipart/form-data CSV 文件")
+		}
+		return
+	}
+
+	workspaceID := c.GetString(identity.ContextWorkspaceID)
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	var requestHash []byte
+	if key != "" && h.idempotency != nil {
+		if !validIdempotencyKey(key) {
+			writeError(c, http.StatusBadRequest, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key 格式无效")
+			return
+		}
+		sum := sha256.Sum256(append([]byte("POST:/api/v1/links/bulk:"), csvBody...))
+		requestHash = sum[:]
+		record, claimed, beginErr := h.idempotency.Begin(c.Request.Context(), workspaceID, key, requestHash)
+		if beginErr != nil {
+			switch {
+			case errors.Is(beginErr, idempotency.ErrRequestMismatch):
+				writeError(c, http.StatusConflict, "IDEMPOTENCY_MISMATCH", "幂等键已用于其他请求")
+			case errors.Is(beginErr, idempotency.ErrInProgress):
+				c.Header("Retry-After", "1")
+				writeError(c, http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "相同请求正在处理中")
+			default:
+				h.logger.Error("处理批量创建幂等键失败", "error", beginErr)
+				writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+			}
+			return
+		}
+		if !claimed {
+			if record.State != idempotency.StateCompleted ||
+				!record.StatusCode.Valid || !record.ResponseBody.Valid {
+				c.Header("Retry-After", "1")
+				writeError(c, http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "相同请求正在处理中")
+				return
+			}
+			c.Header("Idempotent-Replayed", "true")
+			c.Data(int(record.StatusCode.Int64), "application/json; charset=utf-8", []byte(record.ResponseBody.String))
+			return
+		}
+	}
+
+	result, createErr := h.service.BulkCreate(
+		c.Request.Context(),
+		workspaceID,
+		bytes.NewReader(csvBody),
+	)
+	if createErr != nil {
+		if key != "" && h.idempotency != nil {
+			if abortErr := h.idempotency.Abort(c.Request.Context(), workspaceID, key, requestHash); abortErr != nil {
+				h.logger.Warn("释放批量创建幂等键失败", "error", abortErr)
+			}
+		}
+		writeLinkError(c, createErr)
+		return
+	}
+	response := h.toBulkResponse(result)
+	responseBody, err := json.Marshal(response)
+	if err != nil {
+		h.logger.Error("序列化批量创建响应失败", "error", err)
+		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "服务器内部错误")
+		return
+	}
+	if key != "" && h.idempotency != nil {
+		if err := h.idempotency.Complete(
+			c.Request.Context(),
+			workspaceID,
+			key,
+			requestHash,
+			http.StatusOK,
+			string(responseBody),
+		); err != nil {
+			h.logger.Error("保存批量创建幂等响应失败", "error", err)
+		}
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", responseBody)
 }
 
 // List 返回当前工作空间的短链接列表
@@ -411,6 +525,65 @@ func (h *Handler) toResponse(link *Link) linkResponse {
 		StartsAt:       link.StartsAt,
 		ExpiresAt:      link.ExpiresAt,
 		CreatedAt:      link.CreatedAt,
+	}
+}
+
+// toBulkResponse 将批量业务结果转换为 HTTP DTO
+func (h *Handler) toBulkResponse(result *BulkCreateResult) bulkCreateResponse {
+	items := make([]bulkCreateItemResponse, 0, len(result.Items))
+	for index := range result.Items {
+		item := &result.Items[index]
+		response := bulkCreateItemResponse{
+			Row:          item.Row,
+			Status:       item.Status,
+			ErrorCode:    item.ErrorCode,
+			ErrorMessage: item.ErrorMessage,
+		}
+		if item.Link != nil {
+			linkResponse := h.toResponse(item.Link)
+			response.Link = &linkResponse
+		}
+		items = append(items, response)
+	}
+	return bulkCreateResponse{
+		BatchID:   result.BatchID,
+		Total:     result.Total,
+		Succeeded: result.Succeeded,
+		Failed:    result.Failed,
+		Items:     items,
+	}
+}
+
+// readBulkCSV 从 multipart 流读取唯一 CSV 文件并限制文件大小
+func readBulkCSV(request *http.Request) ([]byte, error) {
+	reader, err := request.MultipartReader()
+	if err != nil {
+		return nil, err
+	}
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%w: 缺少 file 文件字段", ErrInvalidInput)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if part.FormName() != "file" {
+			_ = part.Close()
+			continue
+		}
+		body, readErr := io.ReadAll(io.LimitReader(part, maxBulkCSVBytes+1))
+		closeErr := part.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		if len(body) > maxBulkCSVBytes {
+			return nil, errBulkFileTooLarge
+		}
+		return body, nil
 	}
 }
 
