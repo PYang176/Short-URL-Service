@@ -39,7 +39,7 @@ Webhook 等后台配置只对平台管理员开放，Prometheus 指标使用独�
 
 | 层 | 技术 |
 | --- | --- |
-| API | Go 1.26、Gin、sqlx |
+| API | Go 1.26.11、Gin、sqlx |
 | 数据 | MySQL 8，宿主机原生实例 |
 | 缓存与事件 | Redis 7、Redis Streams |
 | 前端 | Vue 3、TypeScript、Pinia、Vue Router |
@@ -79,6 +79,7 @@ Web 使用独立的 Nginx 镜像。MySQL 不放入 Docker，避免本地数据�
 - [接口设计](docs/接口设计.md)：已实现接口与规划接口。
 - [OpenAPI 3.1](web/public/openapi.yaml)：开发者接口描述。
 - [开发路线](docs/开发路线.md)：里程碑、验收项和当前技术债。
+- [发布验收](docs/发布验收.md)：安全、测试、备份恢复和压测结果。
 - [工程协作规则](AGENTS.md)：本地资源、测试和提交约束。
 - [部署与监控](deploy/README.md)：镜像、迁移、Prometheus 和 Grafana。
 
@@ -86,7 +87,7 @@ Web 使用独立的 Nginx 镜像。MySQL 不放入 Docker，避免本地数据�
 
 需要：
 
-- Go 1.26
+- Go 1.26.11
 - Node.js 24
 - Docker Desktop
 - 宿主机 MySQL 8
@@ -116,6 +117,7 @@ notepad deploy\.env
 MYSQL_DSN
 JWT_SECRET
 ANALYTICS_HASH_SECRET
+GRAFANA_ADMIN_PASSWORD
 ```
 
 ### 3. 构建并启动
@@ -371,10 +373,12 @@ go test ./...
 go test -race ./...
 go vet ./...
 golangci-lint run ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
 Set-Location web
 npm run typecheck
 npm run build
+npm audit --omit=dev --audit-level=high
 ```
 
 真实 MySQL 集成测试：
@@ -400,15 +404,20 @@ python web\scripts\e2e.py
 
 | 指标 | 结果 |
 | --- | --- |
-| 跳转次数 | 10,000 |
-| 实际速率 | 约 483 req/s |
-| 错误率 | 0% |
-| P95 | 3.55ms |
-| P99 | 4.99ms |
+| 跳转次数 | 10,001 |
+| 实际速率 | 约 500.05 次/秒 |
+| 检查成功率 | 100% |
+| HTTP 请求失败 | 0 |
+| P95 | 2.97 ms |
+| P99 | 16.57 ms |
+
+该结果来自单机、Redis 缓存已预热的跳转路径，用于验证当前演示版本的稳定性，
+不代表生产集群容量。
 
 详细环境、边界和原始 JSON：
 
 - [500 req/s 报告](loadtest/reports/redirect-500rps.md)
+- [收尾阶段 500 req/s 回归](loadtest/reports/redirect-closure-500rps.md)
 - [k6 脚本](loadtest/redirect.js)
 
 ## 目录

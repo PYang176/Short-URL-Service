@@ -290,19 +290,31 @@ func TestMySQLRepositoryConcurrentClaims(t *testing.T) {
 	}
 	results := make(chan claimResult, 2)
 	var wait sync.WaitGroup
+	start := make(chan struct{})
 	for range 2 {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			jobs, err := NewMySQLRepository(db).ClaimDeliveries(
-				context.Background(),
-				1,
-				now.Add(time.Second),
-				now.Add(time.Minute),
-			)
-			results <- claimResult{jobs: jobs, err: err}
+			<-start
+			repo := NewMySQLRepository(db)
+			claimed := make([]DeliveryJob, 0, 2)
+			for attempt := 0; attempt < 2; attempt++ {
+				jobs, err := repo.ClaimDeliveries(
+					context.Background(),
+					1,
+					now.Add(time.Second),
+					now.Add(time.Minute),
+				)
+				if err != nil {
+					results <- claimResult{err: err}
+					return
+				}
+				claimed = append(claimed, jobs...)
+			}
+			results <- claimResult{jobs: claimed}
 		}()
 	}
+	close(start)
 	wait.Wait()
 	close(results)
 

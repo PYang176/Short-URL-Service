@@ -54,3 +54,4 @@ JSON 文件。不要只写未经测试的 QPS 数字。
 ## 已生成报告
 
 - [500 req/s 基线](./reports/redirect-500rps.md)
+- [收尾阶段 500 req/s 回归](./reports/redirect-closure-500rps.md)
